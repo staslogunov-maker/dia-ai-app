@@ -1,93 +1,82 @@
 require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
+const OpenAI = require('openai');
 
 const app = express();
 
 app.use(cors());
 app.use(express.json({ limit: '20mb' }));
 
+const PORT = process.env.PORT || 3000;
+const apiKey = process.env.OPENAI_API_KEY;
+
+console.log('HAS OPENAI KEY:', !!apiKey);
+console.log('KEY PREFIX:', apiKey ? apiKey.slice(0, 7) : 'NO_KEY');
+
+if (!apiKey) {
+  console.error('OPENAI_API_KEY is missing');
+}
+
+const openai = new OpenAI({ apiKey });
+
 function roundToTenth(value) {
   return Math.round(value * 10) / 10;
 }
 
-function smartBreadUnits(parsed) {
-  const name = String(parsed?.displayName || '').toLowerCase();
-  const comment = String(parsed?.comment || '').toLowerCase();
-  const text = `${name} ${comment}`;
+function toNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
 
-  const carbs = Number(parsed?.carbs || 0);
-  let breadUnits = Number(parsed?.breadUnits || 0);
+function smartBreadUnits(parsed) {
+  const carbs = toNumber(parsed.carbs, 0);
+  let breadUnits = toNumber(parsed.breadUnits, 0);
 
   if (carbs > 0) {
     breadUnits = roundToTenth(carbs / 12);
   }
 
-  const hasPotato =
-    text.includes('картоф') ||
-    text.includes('potato') ||
-    text.includes('fries');
+  return breadUnits;
+}
 
-  const hasRice =
-    text.includes('рис') ||
-    text.includes('rice');
+function normalizeResult(parsed) {
+  const calories = toNumber(parsed.calories, 0);
+  const protein = toNumber(parsed.protein, 0);
+  const fat = toNumber(parsed.fat, 0);
+  const carbs = toNumber(parsed.carbs, 0);
+  const breadUnits = smartBreadUnits(parsed);
 
-  const hasPasta =
-    text.includes('макарон') ||
-    text.includes('паста') ||
-    text.includes('spaghetti') ||
-    text.includes('pasta');
+  return {
+    displayName: String(parsed.displayName || 'Неизвестное блюдо'),
+    calories: roundToTenth(calories),
+    breadUnits: roundToTenth(breadUnits),
+    protein: roundToTenth(protein),
+    fat: roundToTenth(fat),
+    carbs: roundToTenth(carbs),
+    comment: String(
+      parsed.comment ||
+        'Оценка примерная. Для точности проверь вес и состав блюда.'
+    ),
+  };
+}
 
-  const hasBread =
-    text.includes('хлеб') ||
-    text.includes('булк') ||
-    text.includes('toast') ||
-    text.includes('bread') ||
-    text.includes('bun');
+function extractJson(text) {
+  if (!text) return null;
 
-  const hasSweet =
-    text.includes('конфет') ||
-    text.includes('шоколад') ||
-    text.includes('печенье') ||
-    text.includes('торт') ||
-    text.includes('sprite') ||
-    text.includes('cola') ||
-    text.includes('сок') ||
-    text.includes('лимонад') ||
-    text.includes('candy') ||
-    text.includes('cookie') ||
-    text.includes('cake');
+  try {
+    return JSON.parse(text);
+  } catch {}
 
-  const hasPureProtein =
-    text.includes('мяс') ||
-    text.includes('котлет') ||
-    text.includes('тефтел') ||
-    text.includes('куриц') ||
-    text.includes('рыб') ||
-    text.includes('яйц') ||
-    text.includes('meat') ||
-    text.includes('chicken') ||
-    text.includes('fish') ||
-    text.includes('egg');
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return null;
 
-  if (carbs >= 10 && breadUnits < 0.8) {
-    breadUnits = roundToTenth(carbs / 12);
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    return null;
   }
-
-  if (breadUnits === 0) {
-    if (hasPotato) breadUnits = 3.5;
-    else if (hasRice) breadUnits = 3.5;
-    else if (hasPasta) breadUnits = 3.5;
-    else if (hasBread) breadUnits = 2.0;
-    else if (hasSweet) breadUnits = 2.0;
-    else if (hasPureProtein) breadUnits = 0;
-  }
-
-  if (!Number.isFinite(breadUnits) || breadUnits < 0) {
-    breadUnits = 0;
-  }
-
-  return roundToTenth(breadUnits);
 }
 
 app.get('/', (req, res) => {
@@ -96,106 +85,93 @@ app.get('/', (req, res) => {
 
 app.post(['/analyze-food', '/analyze-food/'], async (req, res) => {
   try {
-    console.log('POST /analyze-food получен');
-
-    const { imageBase64 } = req.body;
-
-    if (!imageBase64) {
-      return res.status(400).json({ error: 'Нет imageBase64' });
+    if (!apiKey) {
+      return res.status(500).json({
+        error: 'OPENAI_API_KEY missing on server',
+      });
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    
+    const { imageBase64 } = req.body || {};
 
-    if (!apiKey) {
-      return res.status(500).json({ error: 'Нет OPENAI_API_KEY в .env' });
+    if (!imageBase64) {
+      return res.status(400).json({
+        error: 'Нет imageBase64',
+      });
     }
 
     const prompt = `
-Определи, что изображено на фото, и верни только JSON.
+Ты анализируешь фото еды для диабетического дневника.
 
-Формат строго такой:
+Верни ТОЛЬКО JSON без пояснений и без markdown.
+
+Формат ответа:
 {
-  "displayName": "Название блюда или напитка",
+  "displayName": "название блюда",
   "calories": 0,
   "breadUnits": 0,
   "protein": 0,
   "fat": 0,
   "carbs": 0,
-  "comment": "Короткий комментарий"
+  "comment": "краткий комментарий"
 }
 
 Правила:
-- если на фото напиток, укажи напиток
-- если на фото несколько одинаковых объектов, оцени главный объект на фото
-- числа должны быть числами, не строками
-- не пиши ничего кроме JSON
+- Всегда оценивай углеводы.
+- Если на фото есть картофель, рис, макароны, хлеб, сладости, фрукты, выпечка, крупы, соусы с сахаром — углеводы не должны быть 0.
+- Хлебные единицы считай умно: примерно 1 ХЕ = 12 г углеводов.
+- Если breadUnits не уверен, всё равно оцени по carbs.
+- Числа возвращай без единиц измерения.
+- Комментарий короткий, на русском языке.
 `;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: prompt },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:image/jpeg;base64,${imageBase64}`,
-                },
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      temperature: 0.2,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Ты эксперт по анализу еды и расчёту углеводов и хлебных единиц для диабетического дневника.',
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:image/jpeg;base64,${imageBase64}`,
               },
-            ],
-          },
-        ],
-        max_tokens: 500,
-      }),
+            },
+          ],
+        },
+      ],
     });
 
-    const data = await response.json();
-    console.log('OPENAI:', JSON.stringify(data));
+    const content = response.choices?.[0]?.message?.content || '';
+    const parsed = extractJson(content);
 
-    if (!response.ok) {
+    if (!parsed) {
+      console.error('OPENAI RAW RESPONSE:', content);
       return res.status(500).json({
-        error: data?.error?.message || 'Ошибка OpenAI',
+        error: 'Не удалось разобрать ответ AI',
       });
     }
 
-    const content = data?.choices?.[0]?.message?.content;
+    const result = normalizeResult(parsed);
 
-    if (!content) {
-      return res.status(500).json({ error: 'Нет ответа от OpenAI' });
-    }
+    console.log('SERVER RESPONSE:', result);
 
-    let parsed;
-    try {
-      parsed = JSON.parse(content);
-    } catch (error) {
-      return res.status(500).json({
-        error: 'OpenAI прислал некорректный JSON',
-      });
-    }
-
-    parsed.breadUnits = smartBreadUnits(parsed);
-
-    return res.json(parsed);
+    return res.json(result);
   } catch (error) {
-    console.error('SERVER ERROR:', error);
+    console.error('SERVER ERROR:', error?.message || error);
+
     return res.status(500).json({
       error: error?.message || 'Ошибка сервера',
     });
   }
 });
 
-app.listen(3000, '0.0.0.0', () => {
-  console.log('AI SERVER STARTED ON 3000');
+app.listen(PORT, () => {
+  console.log(`AI SERVER STARTED ON ${PORT}`);
 });
-
-process.stdin.resume();
