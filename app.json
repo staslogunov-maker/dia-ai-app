@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Dia AI",
+    "slug": "dia-ai-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "experiments": {
+      "turboModules": false
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35
+          }
+        }
+      ],
+      "expo-web-browser",
+      "expo-localization"
+    ],
+    "android": {
+      "package": "com.diaai.smart.diary",
+      "versionCode": 1,
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "29cd88e5-8cce-424a-b387-f9e6bb8a7e45"
+      }
+    },
+    "owner": "stanislavslogunovs"
+  }
+}

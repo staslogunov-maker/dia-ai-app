@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "1096639359057",
+    "project_id": "dia-ai-3ab2a",
+    "storage_bucket": "dia-ai-3ab2a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1096639359057:android:12a99a369c8c86b8a1f070",
+        "android_client_info": {
+          "package_name": "com.dia.smart.diary"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAAWH1FVa9D04npNRWAwckLFVmnLb-Sxwg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1096639359057:android:a636d2a71dfc1d8ea1f070",
+        "android_client_info": {
+          "package_name": "com.diaai.smart.diary"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAAWH1FVa9D04npNRWAwckLFVmnLb-Sxwg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

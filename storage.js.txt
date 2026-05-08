@@ -1,0 +1,34 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const KEY = 'FOOD_DIARY';
+
+export const saveEntry = async (entry) => {
+  try {
+    const existing = await AsyncStorage.getItem(KEY);
+    const data = existing ? JSON.parse(existing) : [];
+    const newData = [entry, ...data];
+    await AsyncStorage.setItem(KEY, JSON.stringify(newData));
+  } catch (e) {
+    console.log('Ошибка сохранения:', e);
+  }
+};
+
+export const getEntries = async () => {
+  try {
+    const data = await AsyncStorage.getItem(KEY);
+    return data ? JSON.parse(data) : [];
+  } catch (e) {
+    console.log('Ошибка загрузки:', e);
+    return [];
+  }
+};
+
+export const deleteEntry = async (id) => {
+  try {
+    const data = await getEntries();
+    const filtered = data.filter((item) => item.id !== id);
+    await AsyncStorage.setItem(KEY, JSON.stringify(filtered));
+  } catch (e) {
+    console.log('Ошибка удаления:', e);
+  }
+};

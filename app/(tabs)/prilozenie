@@ -1,0 +1,2 @@
+npx expo install expo-camera expo-file-system
+npm install axios
