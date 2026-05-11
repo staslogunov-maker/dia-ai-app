@@ -204,7 +204,7 @@ function extractJson(text) {
 }
 
 app.get('/', (req, res) => {
-  res.send('NEW AI SERVER v4 SMART COMMENTS WORKS');
+  res.send('Stas supper AI v5');
 });
 
 app.post(['/analyze-food', '/analyze-food/'], async (req, res) => {
