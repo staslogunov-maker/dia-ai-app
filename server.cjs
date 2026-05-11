@@ -41,22 +41,106 @@ function smartBreadUnits(parsed) {
   return breadUnits;
 }
 
-function getFallbackComment(language) {
-  const lang = String(language || 'en').slice(0, 2).toLowerCase();
+function getLang(language) {
+  return String(language || 'en').slice(0, 2).toLowerCase();
+}
+
+function isWeakComment(comment) {
+  const text = String(comment || '').trim().toLowerCase();
+
+  return (
+    !text ||
+    text.length < 80 ||
+    text.split(/\s+/).length < 12 ||
+    text.includes('содержит углеводы') ||
+    text.includes('высокое содержание углеводов') ||
+    text.includes('содержит сахар') ||
+    text.includes('contains carbohydrates') ||
+    text.includes('high carbohydrate') ||
+    text.includes('contains sugar') ||
+    text.includes('satur ogļhidrātus') ||
+    text.includes('augsts ogļhidrātu')
+  );
+}
+
+function smartFallbackComment(displayName, language) {
+  const lang = getLang(language);
+  const name = String(displayName || '').toLowerCase();
+
+  const isAlcohol =
+    name.includes('пиво') ||
+    name.includes('beer') ||
+    name.includes('вино') ||
+    name.includes('wine') ||
+    name.includes('алког') ||
+    name.includes('alcohol') ||
+    name.includes('alus') ||
+    name.includes('vīns');
+
+  const isChips =
+    name.includes('чипс') ||
+    name.includes('chips') ||
+    name.includes('snack') ||
+    name.includes('сухар') ||
+    name.includes('čips');
+
+  const isSweet =
+    name.includes('торт') ||
+    name.includes('cake') ||
+    name.includes('конфет') ||
+    name.includes('candy') ||
+    name.includes('шоколад') ||
+    name.includes('chocolate') ||
+    name.includes('dessert') ||
+    name.includes('десерт') ||
+    name.includes('kūka') ||
+    name.includes('šokolāde');
 
   if (lang === 'ru') {
-    return 'Оценка примерная. Этот продукт может влиять на сахар, поэтому лучше учитывать углеводы и проверить сахар через 1–2 часа.';
+    if (isAlcohol) {
+      return 'Этот напиток содержит углеводы и может повлиять на сахар не сразу, а позже. Лучше учитывать порцию и проверить сахар через 1–2 часа после употребления.';
+    }
+
+    if (isChips) {
+      return 'Такие закуски содержат быстрые углеводы и жиры, поэтому сахар может подняться довольно быстро. Лучше учитывать размер порции и проверить глюкозу после еды.';
+    }
+
+    if (isSweet) {
+      return 'Сладкие продукты могут быстро повысить уровень сахара из-за большого количества быстрых углеводов. Лучше контролировать порцию и проверить сахар позже.';
+    }
+
+    return 'Это блюдо содержит углеводы и может повлиять на уровень сахара после еды. Лучше учитывать размер порции и проверить сахар через 1–2 часа.';
   }
 
   if (lang === 'lv') {
-    return 'Novērtējums ir aptuvens. Šis produkts var ietekmēt cukura līmeni, tāpēc labāk ņemt vērā ogļhidrātus un pārbaudīt cukuru pēc 1–2 stundām.';
+    if (isAlcohol) {
+      return 'Šis dzēriens satur ogļhidrātus un var ietekmēt cukura līmeni arī vēlāk. Labāk ņemt vērā porciju un pārbaudīt cukuru pēc 1–2 stundām.';
+    }
+
+    if (isChips) {
+      return 'Šādas uzkodas satur ātrus ogļhidrātus un taukus, tāpēc cukura līmenis var paaugstināties diezgan ātri. Labāk ņemt vērā porcijas lielumu.';
+    }
+
+    if (isSweet) {
+      return 'Saldumi var ātri paaugstināt cukura līmeni lielā ātro ogļhidrātu daudzuma dēļ. Labāk kontrolēt porciju un pārbaudīt cukuru vēlāk.';
+    }
+
+    return 'Šis ēdiens satur ogļhidrātus un var ietekmēt cukura līmeni pēc ēšanas. Labāk ņemt vērā porcijas lielumu un pārbaudīt cukuru pēc 1–2 stundām.';
   }
 
-  if (lang === 'de') {
-    return 'Die Einschätzung ist ungefähr. Dieses Produkt kann den Blutzucker beeinflussen, daher sollten Kohlenhydrate berücksichtigt und der Zucker nach 1–2 Stunden geprüft werden.';
+  if (isAlcohol) {
+    return 'This drink contains carbohydrates and may affect glucose later, not immediately. It is better to count the portion and check glucose after 1–2 hours.';
   }
 
-  return 'This is an approximate estimate. This food may affect glucose levels, so it is better to count the carbohydrates and check glucose after 1–2 hours.';
+  if (isChips) {
+    return 'These snacks contain fast carbohydrates and fats, so glucose may rise quite quickly. It is better to watch the portion size and check glucose after eating.';
+  }
+
+  if (isSweet) {
+    return 'Sweet foods may raise glucose quickly because they contain fast carbohydrates. It is better to control the portion and check glucose later.';
+  }
+
+  return 'This food contains carbohydrates and may affect glucose after eating. It is better to count the portion size and check glucose after 1–2 hours.';
 }
 
 function normalizeResult(parsed, language) {
@@ -66,14 +150,15 @@ function normalizeResult(parsed, language) {
   const carbs = toNumber(parsed.carbs, 0);
   const breadUnits = smartBreadUnits(parsed);
 
+  const displayName = String(parsed.displayName || 'Food');
   let comment = String(parsed.comment || '').trim();
 
-  if (!comment || comment.split(/\s+/).length < 12) {
-    comment = getFallbackComment(language);
+  if (isWeakComment(comment)) {
+    comment = smartFallbackComment(displayName, language);
   }
 
   return {
-    displayName: String(parsed.displayName || 'Food'),
+    displayName,
     calories: roundToTenth(calories),
     breadUnits: roundToTenth(breadUnits),
     protein: roundToTenth(protein),
@@ -101,7 +186,7 @@ function extractJson(text) {
 }
 
 app.get('/', (req, res) => {
-  res.send('AI SERVER WORKS');
+  res.send('NEW AI SERVER v3 WORKS');
 });
 
 app.post(['/analyze-food', '/analyze-food/'], async (req, res) => {
@@ -170,22 +255,10 @@ Comment rules:
   "Contains sugar"
   "Carbs are not zero"
 - The comment should sound like a real helpful assistant.
-
-Good examples in Russian:
-- "Чипсы содержат много углеводов и жиров, поэтому сахар может подняться быстрее обычного. Лучше учитывать размер порции и проверить сахар через 1–2 часа."
-- "Сладкое вино содержит сахар и может повысить уровень глюкозы. После алкоголя сахар иногда меняется позже, поэтому лучше проверить его через 1–2 часа."
-
-Good examples in English:
-- "Chips contain many carbohydrates and fats, so glucose may rise faster than expected. It is better to watch the portion size and check glucose after 1–2 hours."
-- "Sweet wine contains sugar and may raise glucose levels. Alcohol can affect glucose later, so it is better to check it again after 1–2 hours."
-
-Good examples in Latvian:
-- "Čipsi satur daudz ogļhidrātu un tauku, tāpēc cukura līmenis var paaugstināties diezgan ātri. Labāk ņemt vērā porcijas lielumu un pārbaudīt cukuru pēc 1–2 stundām."
-- "Saldais vīns satur cukuru un var paaugstināt glikozes līmeni. Alkohola ietekme var parādīties vēlāk, tāpēc labāk pārbaudīt cukuru pēc 1–2 stundām."
 `;
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4.1-mini',
       temperature: 0.7,
       messages: [
         {
