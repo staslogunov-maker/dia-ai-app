@@ -41,7 +41,25 @@ function smartBreadUnits(parsed) {
   return breadUnits;
 }
 
-function normalizeResult(parsed) {
+function getFallbackComment(language) {
+  const lang = String(language || 'en').slice(0, 2).toLowerCase();
+
+  if (lang === 'ru') {
+    return 'Оценка примерная. Этот продукт может влиять на сахар, поэтому лучше учитывать углеводы и проверить сахар через 1–2 часа.';
+  }
+
+  if (lang === 'lv') {
+    return 'Novērtējums ir aptuvens. Šis produkts var ietekmēt cukura līmeni, tāpēc labāk ņemt vērā ogļhidrātus un pārbaudīt cukuru pēc 1–2 stundām.';
+  }
+
+  if (lang === 'de') {
+    return 'Die Einschätzung ist ungefähr. Dieses Produkt kann den Blutzucker beeinflussen, daher sollten Kohlenhydrate berücksichtigt und der Zucker nach 1–2 Stunden geprüft werden.';
+  }
+
+  return 'This is an approximate estimate. This food may affect glucose levels, so it is better to count the carbohydrates and check glucose after 1–2 hours.';
+}
+
+function normalizeResult(parsed, language) {
   const calories = toNumber(parsed.calories, 0);
   const protein = toNumber(parsed.protein, 0);
   const fat = toNumber(parsed.fat, 0);
@@ -51,12 +69,11 @@ function normalizeResult(parsed) {
   let comment = String(parsed.comment || '').trim();
 
   if (!comment || comment.split(/\s+/).length < 12) {
-    comment =
-      'Оценка примерная. Этот продукт может влиять на сахар, поэтому лучше учитывать углеводы и проверить сахар через 1–2 часа.';
+    comment = getFallbackComment(language);
   }
 
   return {
-    displayName: String(parsed.displayName || 'Неизвестное блюдо'),
+    displayName: String(parsed.displayName || 'Food'),
     calories: roundToTenth(calories),
     breadUnits: roundToTenth(breadUnits),
     protein: roundToTenth(protein),
@@ -95,76 +112,86 @@ app.post(['/analyze-food', '/analyze-food/'], async (req, res) => {
       });
     }
 
-    const { imageBase64 } = req.body || {};
+    const { imageBase64, language = 'en' } = req.body || {};
 
     if (!imageBase64) {
       return res.status(400).json({
-        error: 'Нет imageBase64',
+        error: 'No imageBase64',
       });
     }
 
+    const userLanguage = String(language || 'en').slice(0, 5);
+
     const prompt = `
-Ты анализируешь фото еды для диабетического дневника.
+You analyze a food or drink photo for a diabetes diary.
 
-Верни ТОЛЬКО JSON без пояснений и без markdown.
+Return ONLY valid JSON. No markdown. No explanations outside JSON.
 
-Формат ответа:
+User language: ${userLanguage}
+
+Response format:
 {
-  "displayName": "название еды или напитка",
+  "displayName": "food or drink name in the user language",
   "calories": 0,
   "breadUnits": 0,
   "protein": 0,
   "fat": 0,
   "carbs": 0,
-  "comment": "полезный комментарий для диабетика"
+  "comment": "useful diabetes-friendly comment in the user language"
 }
 
-Правила расчёта:
-- Всегда оценивай углеводы.
-- Если видишь напиток, пиво, вино, сок, лимонад, сладкий напиток — тоже считай углеводы.
-- Пиво обычно содержит углеводы из солода. Не ставь 0 углеводов для пива.
-- Сладкое вино, ликёр, коктейль, сладкий алкоголь — углеводы могут быть высокими.
-- Если на фото есть картофель, рис, макароны, хлеб, сладости, фрукты, выпечка, крупы, соусы с сахаром — углеводы не должны быть 0.
-- Хлебные единицы считай примерно так: 1 ХЕ = 12 г углеводов.
-- Если breadUnits не уверен, всё равно оцени по carbs.
-- Числа возвращай без единиц измерения.
-- Не пиши "0", если еда или напиток явно содержит углеводы.
-- Если фото не идеально понятно, дай примерную оценку.
+Nutrition rules:
+- Always estimate carbohydrates.
+- If you see drinks, beer, wine, juice, lemonade, sweet drinks, cocktails — estimate carbohydrates too.
+- Beer usually contains carbohydrates from malt. Do not set carbs to 0 for beer.
+- Sweet wine, liqueur, cocktails and sweet alcohol may contain significant carbohydrates.
+- If you see potatoes, rice, pasta, bread, sweets, fruit, pastry, grains, chips, sauces with sugar — carbs must not be 0.
+- Bread units: approximately 1 bread unit = 12 g carbohydrates.
+- If breadUnits is uncertain, calculate it from carbs.
+- Return numbers without units.
+- If the photo is not perfectly clear, still give a reasonable estimate.
 
-Правила комментария:
-- Комментарий всегда на русском языке.
-- Комментарий должен быть полезный, 2–3 предложения.
-- Комментарий НЕ должен быть короче 12 слов.
-- Комментарий должен быть 120–250 символов.
-- Комментарий должен объяснять влияние еды или напитка на сахар.
-- Нельзя писать короткие фразы:
-  "Содержит углеводы"
-  "Высокое содержание углеводов"
-  "Содержит сахар"
-  "Содержит сахар, углеводы не нулевые"
-- Комментарий должен выглядеть как совет живого помощника.
-- Для сладких напитков и алкоголя обязательно предупреждай, что сахар может подняться позже.
-- Для быстрых углеводов предупреждай о возможном резком росте сахара.
-- Объясни, почему продукт может влиять на сахар.
-- Для алкоголя обязательно напомни: сахар может меняться позже, лучше проверить через 1–2 часа.
-- Не ставь диагноз и не назначай лечение.
-- Пиши простым языком.
+Comment rules:
+- The comment MUST be in the user language: ${userLanguage}.
+- The food/drink name MUST also be in the user language.
+- The comment must be useful and human.
+- The comment must be 2–3 full sentences.
+- The comment must not be shorter than 12 words.
+- The comment should be about 120–250 characters.
+- Explain how this food or drink can affect glucose.
+- Give a simple practical tip: portion size, carbohydrates, or checking glucose after eating.
+- For alcohol and sweet drinks, mention that glucose may change later and it is better to check after 1–2 hours.
+- For fast carbohydrates, warn about possible glucose rise.
+- Do not diagnose.
+- Do not prescribe treatment.
+- Do not write dry phrases like:
+  "Contains carbohydrates"
+  "High carbohydrate content"
+  "Contains sugar"
+  "Carbs are not zero"
+- The comment should sound like a real helpful assistant.
 
-Примеры хороших комментариев:
-- "Пиво содержит углеводы из солода и может поднять сахар позже. Лучше учитывать его как углеводный напиток и проверить сахар через 1–2 часа."
-- "Сладкое вино содержит сахар и может быстро повысить уровень глюкозы. После алкоголя сахар иногда меняется не сразу, поэтому лучше проверить его через 1–2 часа."
-- "Чипсы содержат быстрые углеводы и жиры, поэтому сахар может подняться довольно быстро. Лучше учитывать размер порции и проверить сахар через 1–2 часа после еды."
-- "Блюдо содержит быстрые углеводы, поэтому сахар после еды может вырасти. Лучше учитывать размер порции и проверить сахар через 1–2 часа."
+Good examples in Russian:
+- "Чипсы содержат много углеводов и жиров, поэтому сахар может подняться быстрее обычного. Лучше учитывать размер порции и проверить сахар через 1–2 часа."
+- "Сладкое вино содержит сахар и может повысить уровень глюкозы. После алкоголя сахар иногда меняется позже, поэтому лучше проверить его через 1–2 часа."
+
+Good examples in English:
+- "Chips contain many carbohydrates and fats, so glucose may rise faster than expected. It is better to watch the portion size and check glucose after 1–2 hours."
+- "Sweet wine contains sugar and may raise glucose levels. Alcohol can affect glucose later, so it is better to check it again after 1–2 hours."
+
+Good examples in Latvian:
+- "Čipsi satur daudz ogļhidrātu un tauku, tāpēc cukura līmenis var paaugstināties diezgan ātri. Labāk ņemt vērā porcijas lielumu un pārbaudīt cukuru pēc 1–2 stundām."
+- "Saldais vīns satur cukuru un var paaugstināt glikozes līmeni. Alkohola ietekme var parādīties vēlāk, tāpēc labāk pārbaudīt cukuru pēc 1–2 stundām."
 `;
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      temperature: 0.9,
+      temperature: 0.8,
       messages: [
         {
           role: 'system',
           content:
-            'Ты эксперт по анализу еды, напитков, углеводов и хлебных единиц для диабетического дневника. Отвечай строго JSON.',
+            'You are a food, drink, carbohydrate and bread-unit analysis assistant for a diabetes diary. Always return strict JSON only.',
         },
         {
           role: 'user',
@@ -188,11 +215,11 @@ app.post(['/analyze-food', '/analyze-food/'], async (req, res) => {
       console.error('OPENAI RAW RESPONSE:', content);
 
       return res.status(500).json({
-        error: 'Не удалось разобрать ответ AI',
+        error: 'Could not parse AI response',
       });
     }
 
-    const result = normalizeResult(parsed);
+    const result = normalizeResult(parsed, userLanguage);
 
     console.log('SERVER RESPONSE:', result);
 
@@ -201,11 +228,11 @@ app.post(['/analyze-food', '/analyze-food/'], async (req, res) => {
     console.error('SERVER ERROR:', error?.message || error);
 
     return res.status(500).json({
-      error: error?.message || 'Ошибка сервера',
+      error: error?.message || 'Server error',
     });
   }
 });
 
-app.listen(PORT,'0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`AI SERVER STARTED ON ${PORT}`);
 });
