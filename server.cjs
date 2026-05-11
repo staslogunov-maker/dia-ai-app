@@ -186,7 +186,7 @@ Good examples in Latvian:
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      temperature: 0.8,
+      temperature: 0.7,
       messages: [
         {
           role: 'system',
