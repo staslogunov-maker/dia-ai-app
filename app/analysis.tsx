@@ -60,10 +60,8 @@ function tr(key: string, ru: string, en: string, lv?: string) {
     String(value).includes('[missing');
 
   if (!isMissing) return value;
-
   if (lang() === 'en') return en;
   if (lang() === 'lv') return lv || en;
-
   return ru;
 }
 
@@ -71,16 +69,37 @@ function parseNumber(value?: string): number | null {
   if (!value) return null;
 
   const cleaned = String(value).replace(',', '.').match(/\d+(\.\d+)?/);
-
   if (!cleaned) return null;
 
   const num = Number(cleaned[0]);
-
   return Number.isNaN(num) ? null : num;
 }
 
 function formatOne(value: number) {
   return value.toFixed(1).replace('.', ',');
+}
+
+function translateMealType(value?: string) {
+  const original = String(value || '').trim();
+  const v = original.toLowerCase();
+
+  if (v === 'завтрак' || v === 'breakfast' || v === 'brokastis') {
+    return tr('breakfast', 'Завтрак', 'Breakfast', 'Brokastis');
+  }
+
+  if (v === 'обед' || v === 'lunch' || v === 'pusdienas') {
+    return tr('lunch', 'Обед', 'Lunch', 'Pusdienas');
+  }
+
+  if (v === 'ужин' || v === 'dinner' || v === 'vakariņas') {
+    return tr('dinner', 'Ужин', 'Dinner', 'Vakariņas');
+  }
+
+  if (v === 'перекус' || v === 'snack' || v === 'uzkoda') {
+    return tr('snack', 'Перекус', 'Snack', 'Uzkoda');
+  }
+
+  return original || tr('analysisNoMealType', 'Без типа', 'No type', 'Bez tipa');
 }
 
 function average(values: number[]) {
@@ -92,12 +111,7 @@ function getTrendData(values: number[]) {
   if (values.length < 2) {
     return {
       delta: null as number | null,
-      label: tr(
-        'analysisNotEnoughData',
-        'Недостаточно данных',
-        'Not enough data',
-        'Nepietiek datu'
-      ),
+      label: tr('analysisNotEnoughData', 'Недостаточно данных', 'Not enough data', 'Nepietiek datu'),
       color: TEXT,
       subtitle: tr(
         'analysisNeedTwoValues',
@@ -118,12 +132,7 @@ function getTrendData(values: number[]) {
   if (firstAvg === null || secondAvg === null) {
     return {
       delta: null as number | null,
-      label: tr(
-        'analysisNotEnoughData',
-        'Недостаточно данных',
-        'Not enough data',
-        'Nepietiek datu'
-      ),
+      label: tr('analysisNotEnoughData', 'Недостаточно данных', 'Not enough data', 'Nepietiek datu'),
       color: TEXT,
       subtitle: tr(
         'analysisNeedMoreTrendData',
@@ -391,6 +400,14 @@ export default function AnalysisScreen() {
     }, [])
   );
 
+  const goHome = () => {
+    try {
+      router.replace('/');
+    } catch {
+      router.push('/');
+    }
+  };
+
   const stats = useMemo(() => {
     const sortedEntries = entries
       .slice()
@@ -431,9 +448,7 @@ export default function AnalysisScreen() {
         if (before === null || after === null) return null;
 
         return {
-          mealType:
-            item.mealType ||
-            tr('analysisNoMealType', 'Без типа', 'No type', 'Bez tipa'),
+          mealType: translateMealType(item.mealType),
           mealName:
             item.mealName ||
             tr('analysisNoMealName', 'Без названия', 'Untitled', 'Bez nosaukuma'),
@@ -752,7 +767,7 @@ export default function AnalysisScreen() {
 
         <PrimaryButton
           title={tr('analysisBackHome', 'НАЗАД НА ГЛАВНУЮ', 'BACK TO HOME', 'ATPAKAĻ UZ SĀKUMU')}
-          onPress={() => router.back()}
+          onPress={goHome}
         />
 
         <InsightCard

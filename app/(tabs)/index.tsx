@@ -7,6 +7,27 @@ import {
   View,
 } from 'react-native';
 
+import i18n from '../../lib/i18n';
+
+function lang() {
+  return String(i18n.locale || 'en').slice(0, 2);
+}
+
+function tr(key: string, ru: string, en: string, lv?: string) {
+  const value = i18n.t(key);
+
+  const isMissing =
+    !value ||
+    value === key ||
+    String(value).toLowerCase().includes('missing') ||
+    String(value).includes('[missing');
+
+  if (!isMissing) return value;
+  if (lang() === 'en') return en;
+  if (lang() === 'lv') return lv || en;
+  return ru;
+}
+
 function PrimaryButton({
   title,
   onPress,
@@ -26,13 +47,7 @@ function PrimaryButton({
         marginBottom: 14,
       }}
     >
-      <Text
-        style={{
-          color: '#ffffff',
-          fontSize: 18,
-          fontWeight: '900',
-        }}
-      >
+      <Text style={{ color: '#ffffff', fontSize: 18, fontWeight: '900' }}>
         {title}
       </Text>
     </TouchableOpacity>
@@ -60,13 +75,7 @@ function SecondaryButton({
         borderColor: '#d1d5db',
       }}
     >
-      <Text
-        style={{
-          color: '#111827',
-          fontSize: 18,
-          fontWeight: '800',
-        }}
-      >
+      <Text style={{ color: '#111827', fontSize: 18, fontWeight: '800' }}>
         {title}
       </Text>
     </TouchableOpacity>
@@ -79,10 +88,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f3f4f6' }}>
       <ScrollView
-        contentContainerStyle={{
-          padding: 20,
-          paddingBottom: 40,
-        }}
+        contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
         <View
@@ -104,44 +110,68 @@ export default function HomeScreen() {
             Diabet Diary AI
           </Text>
 
-          <Text
-            style={{
-              color: '#dbeafe',
-              fontSize: 17,
-              lineHeight: 25,
-            }}
-          >
-            Сахар, еда, ХЕ, инсулин и графики в одном месте.
+          <Text style={{ color: '#dbeafe', fontSize: 17, lineHeight: 25 }}>
+            {tr(
+              'homeSubtitle',
+              'Сахар, еда, ХЕ, инсулин и графики в одном месте.',
+              'Glucose, food, bread units, insulin and charts in one place.',
+              'Cukurs, ēdiens, maizes vienības, insulīns un grafiki vienuviet.'
+            )}
           </Text>
         </View>
 
         <PrimaryButton
-          title="СФОТОГРАФИРОВАТЬ ЕДУ"
+          title={tr(
+            'takeFoodPhoto',
+            'СФОТОГРАФИРОВАТЬ ЕДУ',
+            'TAKE FOOD PHOTO',
+            'NOFOTOGRAFĒT ĒDIENU'
+          )}
           onPress={() => router.push('/food-entry')}
         />
 
         <SecondaryButton
-          title="РУЧНАЯ ЗАПИСЬ"
+          title={tr(
+            'manualEntry',
+            'РУЧНАЯ ЗАПИСЬ',
+            'MANUAL ENTRY',
+            'MANUĀLS IERAKSTS'
+          )}
           onPress={() => router.push('/food-entry')}
         />
 
         <SecondaryButton
-          title="ОТКРЫТЬ ДНЕВНИК"
+          title={tr(
+            'openDiary',
+            'ОТКРЫТЬ ДНЕВНИК',
+            'OPEN DIARY',
+            'ATVĒRT DIENASGRĀMATU'
+          )}
           onPress={() => router.push('/history')}
         />
 
         <SecondaryButton
-          title="ГРАФИК САХАРА"
+          title={tr(
+            'glucoseChart',
+            'ГРАФИК САХАРА',
+            'GLUCOSE CHART',
+            'CUKURA GRAFIKS'
+          )}
           onPress={() => router.push('/glucose-chart')}
         />
 
         <SecondaryButton
-          title="ОТЧЁТ"
+          title={tr('report', 'ОТЧЁТ', 'REPORT', 'ATSKAITE')}
           onPress={() => router.push('/report')}
         />
 
         <SecondaryButton
-          title="УМНЫЙ АНАЛИЗ"
+          title={tr(
+            'smartAnalysis',
+            'УМНЫЙ АНАЛИЗ',
+            'SMART ANALYSIS',
+            'GUDRĀ ANALĪZE'
+          )}
           onPress={() => router.push('/analysis')}
         />
       </ScrollView>

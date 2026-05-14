@@ -133,13 +133,7 @@ function statusColor(status?: DishStatus) {
   return GREEN;
 }
 
-function InfoLine({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function InfoLine({ label, value }: { label: string; value: string }) {
   return (
     <Text
       style={{
@@ -175,6 +169,14 @@ export default function HistoryScreen() {
       loadHistory();
     }, [])
   );
+
+  const goHome = () => {
+    try {
+      router.replace('/');
+    } catch {
+      router.push('/');
+    }
+  };
 
   const deleteEntry = async (id: string) => {
     Alert.alert(
@@ -218,7 +220,7 @@ export default function HistoryScreen() {
         showsVerticalScrollIndicator={false}
       >
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={goHome}
           activeOpacity={0.85}
           style={{
             alignSelf: 'flex-start',

@@ -12,13 +12,6 @@ app.use(express.json({ limit: '20mb' }));
 const PORT = process.env.PORT || 3000;
 const apiKey = process.env.OPENAI_API_KEY;
 
-console.log('HAS OPENAI KEY:', !!apiKey);
-console.log('KEY PREFIX:', apiKey ? apiKey.slice(0, 7) : 'NO_KEY');
-
-if (!apiKey) {
-  console.error('OPENAI_API_KEY is missing');
-}
-
 const openai = new OpenAI({ apiKey });
 
 function roundToTenth(value) {
@@ -32,6 +25,20 @@ function toNumber(value, fallback = 0) {
 
 function getLang(language) {
   return String(language || 'en').slice(0, 2).toLowerCase();
+}
+
+function languageName(language) {
+  const lang = getLang(language);
+  if (lang === 'ru') return 'Russian';
+  if (lang === 'lv') return 'Latvian';
+  return 'English';
+}
+
+function fallbackName(language) {
+  const lang = getLang(language);
+  if (lang === 'ru') return 'Неизвестное блюдо';
+  if (lang === 'lv') return 'Nezināms ēdiens';
+  return 'Unknown food';
 }
 
 function smartBreadUnits(parsed) {
@@ -98,21 +105,9 @@ function smartFallbackComment(displayName, language) {
     name.includes('cookie') ||
     name.includes('kūka');
 
-  const isFastCarbs =
-    isChips ||
-    isSweet ||
-    name.includes('хлеб') ||
-    name.includes('bread') ||
-    name.includes('рис') ||
-    name.includes('rice') ||
-    name.includes('карто') ||
-    name.includes('potato') ||
-    name.includes('макарон') ||
-    name.includes('pasta');
-
   if (lang === 'ru') {
     if (isAlcohol) {
-      return 'Этот напиток содержит углеводы и может повлиять на сахар не сразу, а позже. Лучше учитывать порцию и проверить сахар через 1–2 часа после употребления.';
+      return 'Этот напиток содержит углеводы и может повлиять на сахар не сразу, а позже. Лучше учитывать порцию и проверить сахар через 1–2 часа.';
     }
 
     if (isChips) {
@@ -120,11 +115,7 @@ function smartFallbackComment(displayName, language) {
     }
 
     if (isSweet) {
-      return 'Сладкие продукты могут быстро повысить сахар из-за большого количества быстрых углеводов. Лучше уменьшить порцию и проверить сахар через 1–2 часа.';
-    }
-
-    if (isFastCarbs) {
-      return 'В этом блюде есть быстрые углеводы, поэтому сахар после еды может заметно вырасти. Лучше учитывать порцию и проверить глюкозу через 1–2 часа.';
+      return 'Сладкие продукты могут быстро повысить сахар из-за быстрых углеводов. Лучше уменьшить порцию и проверить сахар через 1–2 часа.';
     }
 
     return 'Это примерная оценка блюда. Учитывай углеводы и размер порции, потому что сахар после еды может измениться через некоторое время.';
@@ -168,7 +159,7 @@ function normalizeResult(parsed, language) {
   const carbs = toNumber(parsed.carbs, 0);
   const breadUnits = smartBreadUnits(parsed);
 
-  const displayName = String(parsed.displayName || 'Food');
+  const displayName = String(parsed.displayName || fallbackName(language));
   let comment = String(parsed.comment || '').trim();
 
   if (isWeakComment(comment)) {
@@ -204,7 +195,7 @@ function extractJson(text) {
 }
 
 app.get('/', (req, res) => {
-  res.send('STAS FINAL V10');
+  res.send('STAS MULTILANGUAGE AI V11');
 });
 
 app.post(['/analyze-food', '/analyze-food/'], async (req, res) => {
@@ -224,6 +215,7 @@ app.post(['/analyze-food', '/analyze-food/'], async (req, res) => {
     }
 
     const userLanguage = String(language || 'en').slice(0, 5);
+    const answerLanguage = languageName(userLanguage);
 
     const prompt = `
 You analyze food and drink photos for a diabetes diary app.
@@ -232,17 +224,21 @@ Return ONLY valid JSON.
 No markdown.
 No explanations outside JSON.
 
-User language: ${userLanguage}
+VERY IMPORTANT:
+The user app language is: ${answerLanguage}
+You MUST write BOTH displayName and comment in ${answerLanguage}.
+Do NOT use Russian unless the user language is Russian.
+Do NOT translate only the comment. The food name must also be in ${answerLanguage}.
 
 Format:
 {
-  "displayName": "food or drink name in the user language",
+  "displayName": "food or drink name in ${answerLanguage}",
   "calories": 0,
   "breadUnits": 0,
   "protein": 0,
   "fat": 0,
   "carbs": 0,
-  "comment": "helpful AI comment in the user language"
+  "comment": "helpful diabetes-friendly comment in ${answerLanguage}"
 }
 
 Nutrition rules:
@@ -255,7 +251,7 @@ Nutrition rules:
 - If unsure, estimate realistically.
 
 Comment rules:
-- The comment MUST be in the user language: ${userLanguage}.
+- The comment MUST be in ${answerLanguage}.
 - The comment must sound like a real helpful assistant.
 - The comment must be 2 full sentences.
 - The comment must be 120–250 characters.
@@ -265,38 +261,50 @@ Comment rules:
 - For fast carbohydrates, mention possible glucose rise.
 - Do not diagnose.
 - Do not prescribe treatment.
-- NEVER write short dry phrases like:
-  "Contains carbohydrates"
-  "High carbohydrate content"
-  "Contains sugar"
-  "Be careful"
-  "Высокое содержание углеводов"
-  "Содержит углеводы"
-  "Содержит сахар"
-  "Будьте осторожны"
+- NEVER write short dry phrases.
 
-Good Russian examples:
-"Чипсы содержат быстрые углеводы и жиры, поэтому сахар может подняться довольно быстро. Лучше учитывать размер порции и проверить глюкозу через 1–2 часа."
+Good Latvian example:
+{
+  "displayName": "Čipsi",
+  "calories": 150,
+  "breadUnits": 1.3,
+  "protein": 2,
+  "fat": 9,
+  "carbs": 16,
+  "comment": "Čipsi satur ātrus ogļhidrātus un taukus, tāpēc cukura līmenis var paaugstināties diezgan ātri. Labāk ņemt vērā porcijas lielumu un pārbaudīt cukuru vēlāk."
+}
 
-"Сладкое вино содержит сахар и может повысить глюкозу не сразу, а позже. Лучше учитывать порцию и проверить сахар через 1–2 часа после употребления."
+Good English example:
+{
+  "displayName": "Chips",
+  "calories": 150,
+  "breadUnits": 1.3,
+  "protein": 2,
+  "fat": 9,
+  "carbs": 16,
+  "comment": "Chips contain fast carbohydrates and fats, so glucose may rise quite quickly. It is better to watch the portion size and check glucose after 1–2 hours."
+}
 
-Good English examples:
-"Chips contain fast carbohydrates and fats, so glucose may rise quite quickly. It is better to watch the portion size and check glucose after 1–2 hours."
-
-"Sweet wine contains sugar and may raise glucose later, not only immediately. It is better to count the portion and check glucose after 1–2 hours."
-
-Good Latvian examples:
-"Čipsi satur ātrus ogļhidrātus un taukus, tāpēc cukura līmenis var paaugstināties diezgan ātri. Labāk ņemt vērā porcijas lielumu."
+Good Russian example:
+{
+  "displayName": "Чипсы",
+  "calories": 150,
+  "breadUnits": 1.3,
+  "protein": 2,
+  "fat": 9,
+  "carbs": 16,
+  "comment": "Чипсы содержат быстрые углеводы и жиры, поэтому сахар может подняться довольно быстро. Лучше учитывать размер порции и проверить глюкозу через 1–2 часа."
+}
 `;
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4.1-mini',
-      temperature: 0.6,
+      temperature: 0.5,
       messages: [
         {
           role: 'system',
           content:
-            'You are a food, drink, carbohydrate and bread-unit analysis assistant for a diabetes diary. Always return strict JSON only.',
+            `You are a food, drink, carbohydrate and bread-unit analysis assistant for a diabetes diary. Always return strict JSON only. Always answer in ${answerLanguage}.`,
         },
         {
           role: 'user',
@@ -326,6 +334,8 @@ Good Latvian examples:
 
     const result = normalizeResult(parsed, userLanguage);
 
+    console.log('LANGUAGE:', userLanguage);
+    console.log('ANSWER LANGUAGE:', answerLanguage);
     console.log('SERVER RESPONSE:', result);
 
     return res.json(result);
