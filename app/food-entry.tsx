@@ -20,6 +20,20 @@ import {
 
 import i18n from '../lib/i18n';
 
+type DishItem = {
+  id: string;
+  mealName: string;
+  mealComment: string;
+  calories: string;
+  breadUnits: string;
+  protein: string;
+  fat: string;
+  carbs: string;
+  userNote?: string;
+  photoUri?: string;
+  aiComment?: string;
+};
+
 type DiaryEntry = {
   id: string;
   createdAt: string;
@@ -37,6 +51,7 @@ type DiaryEntry = {
   userNote: string;
   photoUri?: string;
   photoUris?: string[];
+  dishes?: DishItem[];
 };
 
 type AnalyzeResult = {
@@ -124,7 +139,15 @@ function joinNote(oldValue: string, newValue: string) {
   const oldText = String(oldValue || '').trim();
   const newText = String(newValue || '').trim();
 
-  if (oldText && newText) return `${oldText}\n\nДобавлено блюдо: ${newText}`;
+  if (oldText && newText) {
+    return `${oldText}\n\n${tr(
+      'addedDish',
+      'Добавлено блюдо',
+      'Added dish',
+      'Pievienots ēdiens'
+    )}: ${newText}`;
+  }
+
   if (oldText) return oldText;
   return newText;
 }
@@ -144,6 +167,27 @@ function getPhotoUris(item: DiaryEntry) {
 
   return list;
 }
+
+
+function makeDishFromEntry(item: DiaryEntry): DishItem {
+  const firstPhoto = item.photoUri || getPhotoUris(item)[0] || '';
+
+  return {
+    id: `${item.id}-dish-1`,
+    mealName:
+      item.mealName || tr('untitled', 'Без названия', 'Untitled', 'Bez nosaukuma'),
+    mealComment: item.mealComment || item.userNote || '',
+    calories: item.calories || '',
+    breadUnits: item.breadUnits || '',
+    protein: item.protein || '',
+    fat: item.fat || '',
+    carbs: item.carbs || '',
+    userNote: item.userNote || '',
+    photoUri: firstPhoto,
+    aiComment: item.userNote || '',
+  };
+}
+
 
 function normalizeAnalyzeResult(raw: any): AnalyzeResult {
   const data = raw?.result || raw?.data || raw?.analysis || raw?.food || raw?.meal || raw;
@@ -437,6 +481,27 @@ export default function FoodEntryScreen() {
   const [carbs, setCarbs] = useState('');
   const [aiComment, setAiComment] = useState('');
   const [photoUri, setPhotoUri] = useState('');
+  const createCurrentDish = (): DishItem => {
+    const title =
+      mealName || tr('untitled', 'Без названия', 'Untitled', 'Bez nosaukuma');
+
+    const dishComment = mealComment || aiComment || userNote || '';
+
+    return {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      mealName: title,
+      mealComment: dishComment,
+      calories,
+      breadUnits,
+      protein,
+      fat,
+      carbs,
+      userNote,
+      photoUri,
+      aiComment,
+    };
+  };
+
 
   const goToHistoryClean = () => {
     try {
@@ -471,12 +536,16 @@ export default function FoodEntryScreen() {
   const showSavedAndOpenHistory = (message: string) => {
     setSavedOnce(true);
 
-    Alert.alert('Сохранено', message, [
-      {
-        text: 'ОК',
-        onPress: goToHistoryClean,
-      },
-    ]);
+    Alert.alert(
+      tr('savedTitle', 'Сохранено', 'Saved', 'Saglabāts'),
+      message,
+      [
+        {
+          text: tr('ok', 'ОК', 'OK', 'Labi'),
+          onPress: goToHistoryClean,
+        },
+      ]
+    );
   };
 
   const fillFromAI = (data: AnalyzeResult) => {
@@ -652,9 +721,19 @@ export default function FoodEntryScreen() {
     const found = history.find((item) => item.id === editId);
 
     if (!found) {
-      Alert.alert('Ошибка', 'Старая запись не найдена');
+      Alert.alert(
+        tr('error', 'Ошибка', 'Error', 'Kļūda'),
+        tr(
+          'oldEntryNotFound',
+          'Старая запись не найдена',
+          'Old entry not found',
+          'Vecais ieraksts nav atrasts'
+        )
+      );
       return;
     }
+
+    const currentDish = createCurrentDish();
 
     const updatedHistory = history.map((item) => {
       if (item.id !== editId) return item;
@@ -664,6 +743,14 @@ export default function FoodEntryScreen() {
         photoUri && !oldPhotos.includes(photoUri)
           ? [...oldPhotos, photoUri]
           : oldPhotos;
+
+      const oldDishes =
+        Array.isArray(item.dishes) && item.dishes.length > 0
+          ? item.dishes.map((dish, index) => ({
+              ...dish,
+              id: dish.id || `${item.id}-dish-${index + 1}`,
+            }))
+          : [makeDishFromEntry(item)];
 
       return {
         ...item,
@@ -680,12 +767,20 @@ export default function FoodEntryScreen() {
         userNote: joinNote(item.userNote, userNote || aiComment),
         photoUri: nextPhotos[0] || item.photoUri || photoUri,
         photoUris: nextPhotos,
+        dishes: [...oldDishes, currentDish],
       };
     });
 
     await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
 
-    showSavedAndOpenHistory('Блюдо добавлено в эту же запись.');
+    showSavedAndOpenHistory(
+      tr(
+        'dishAddedToEntry',
+        'Блюдо добавлено в эту же запись.',
+        'Dish added to this entry.',
+        'Ēdiens pievienots šim ierakstam.'
+      )
+    );
   };
 
   const saveNewEntry = async () => {
@@ -707,23 +802,31 @@ export default function FoodEntryScreen() {
       userNote: userNote || aiComment,
       photoUri,
       photoUris: photoUri ? [photoUri] : [],
+      dishes: [createCurrentDish()],
     };
 
     const existing = await AsyncStorage.getItem(HISTORY_KEY);
-    const history = existing ? JSON.parse(existing) : [];
+    const history: DiaryEntry[] = existing ? JSON.parse(existing) : [];
 
     history.unshift(newItem);
 
     await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 
-    showSavedAndOpenHistory('Запись добавлена в дневник.');
+    showSavedAndOpenHistory(
+      tr(
+        'entrySaved',
+        'Запись добавлена в дневник.',
+        'Entry added to diary.',
+        'Ieraksts pievienots dienasgrāmatai.'
+      )
+    );
   };
 
   const saveToHistory = async () => {
     try {
       if (savedOnce) {
         Alert.alert(
-          tr('saved', 'Уже сохранено', 'Already saved', 'Jau saglabāts'),
+          tr('alreadySaved', 'Уже сохранено', 'Already saved', 'Jau saglabāts'),
           tr(
             'alreadySavedText',
             'Эта запись уже сохранена. Создай новую запись, чтобы сохранить ещё раз.',
@@ -839,13 +942,28 @@ export default function FoodEntryScreen() {
               }}
             >
               {isAddDishMode
-                ? 'Добавить блюдо'
-                : tr('foodEntryTitle', 'Новая запись', 'New entry', 'Jauns ieraksts')}
+                ? tr(
+                    'addDishTitle',
+                    'Добавить блюдо',
+                    'Add dish',
+                    'Pievienot ēdienu'
+                  )
+                : tr(
+                    'foodEntryTitle',
+                    'Новая запись',
+                    'New entry',
+                    'Jauns ieraksts'
+                  )}
             </Text>
 
             <Text style={{ color: '#dbeafe', fontSize: 16, lineHeight: 23 }}>
               {isAddDishMode
-                ? 'Сфотографируй ещё одно блюдо. После сохранения откроется дневник без лишних возвратов назад.'
+                ? tr(
+                    'addDishSubtitle',
+                    'Сфотографируй ещё одно блюдо. После сохранения откроется дневник без лишних возвратов назад.',
+                    'Take a photo of one more dish. After saving, the diary will open without extra back navigation.',
+                    'Nofotografē vēl vienu ēdienu. Pēc saglabāšanas atvērsies dienasgrāmata.'
+                  )
                 : tr(
                     'foodEntrySubtitle',
                     'Сфотографируй еду или введи всё вручную.',
@@ -946,7 +1064,9 @@ export default function FoodEntryScreen() {
             </SectionCard>
           )}
 
-          <SectionCard title={tr('mealAnalysis', 'Еда и анализ', 'Meal and analysis', 'Ēdiens un analīze')}>
+          <SectionCard
+            title={tr('mealAnalysis', 'Еда и анализ', 'Meal and analysis', 'Ēdiens un analīze')}
+          >
             <InputField
               label={tr('dishName', 'Название блюда', 'Dish name', 'Ēdiena nosaukums')}
               value={mealName}
@@ -1078,7 +1198,12 @@ export default function FoodEntryScreen() {
               savedOnce
                 ? tr('alreadySaved', 'УЖЕ СОХРАНЕНО', 'ALREADY SAVED', 'JAU SAGLABĀTS')
                 : isAddDishMode
-                  ? 'ДОБАВИТЬ В ЭТУ ЗАПИСЬ'
+                  ? tr(
+                      'addToThisEntry',
+                      'ДОБАВИТЬ В ЭТУ ЗАПИСЬ',
+                      'ADD TO THIS ENTRY',
+                      'PIEVIENOT ŠIM IERAKSTAM'
+                    )
                   : tr(
                       'save',
                       'СОХРАНИТЬ В ДНЕВНИК',

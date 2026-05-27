@@ -16,6 +16,20 @@ import {
 
 import i18n from '../lib/i18n';
 
+type DishItem = {
+  id: string;
+  mealName: string;
+  mealComment: string;
+  calories: string;
+  breadUnits: string;
+  protein: string;
+  fat: string;
+  carbs: string;
+  userNote?: string;
+  photoUri?: string;
+  aiComment?: string;
+};
+
 type DiaryEntry = {
   id: string;
   createdAt: string;
@@ -33,6 +47,17 @@ type DiaryEntry = {
   userNote: string;
   photoUri?: string;
   photoUris?: string[];
+  dishes?: DishItem[];
+};
+
+
+type BasalInsulinEntry = {
+  id: string;
+  createdAt: string;
+  insulinName: string;
+  units: string;
+  time: string;
+  comment: string;
 };
 
 type ProblemMeal = DiaryEntry & {
@@ -56,6 +81,7 @@ const BLUE = '#2563eb';
 const GREEN = '#16a34a';
 const ORANGE = '#d97706';
 const RED = '#dc2626';
+const BASAL_STORAGE_KEY = 'basal-insulin-history';
 
 function lang() {
   return String(i18n.locale || 'en').slice(0, 2);
@@ -147,6 +173,27 @@ function getPhotoUris(item: DiaryEntry) {
   }
 
   return list;
+}
+
+function getEntryDishes(item: DiaryEntry): DishItem[] {
+  if (Array.isArray(item.dishes) && item.dishes.length > 0) {
+    return item.dishes;
+  }
+
+  return [
+    {
+      id: `${item.id}-legacy-dish`,
+      mealName: item.mealName,
+      mealComment: item.mealComment,
+      calories: item.calories,
+      breadUnits: item.breadUnits,
+      protein: item.protein,
+      fat: item.fat,
+      carbs: item.carbs,
+      userNote: item.userNote,
+      photoUri: item.photoUri,
+    },
+  ];
 }
 
 async function imageToBase64(uri?: string) {
@@ -379,6 +426,7 @@ function SecondaryButton({
 export default function ReportScreen() {
   const router = useRouter();
   const [entries, setEntries] = useState<DiaryEntry[]>([]);
+  const [basalEntries, setBasalEntries] = useState<BasalInsulinEntry[]>([]);
   const [creatingPdf, setCreatingPdf] = useState(false);
 
   const loadHistory = async () => {
@@ -389,6 +437,15 @@ export default function ReportScreen() {
     } catch (error) {
       console.log('Report loading error:', error);
       setEntries([]);
+    }
+
+    try {
+      const basalData = await AsyncStorage.getItem(BASAL_STORAGE_KEY);
+      const basalHistory = basalData ? JSON.parse(basalData) : [];
+      setBasalEntries(Array.isArray(basalHistory) ? basalHistory : []);
+    } catch (error) {
+      console.log('Basal insulin report loading error:', error);
+      setBasalEntries([]);
     }
   };
 
@@ -523,10 +580,15 @@ export default function ReportScreen() {
 
   const createPdfReport = async () => {
     try {
-      if (!entries.length) {
+      if (!entries.length && !basalEntries.length) {
         Alert.alert(
           tr('noData', 'Нет данных', 'No data', 'Nav datu'),
-          tr('reportAddEntriesFirst', 'Сначала добавь записи в дневник.', 'Add entries to the diary first.', 'Vispirms pievieno ierakstus dienasgrāmatā.')
+          tr(
+            'reportAddEntriesFirst',
+            'Сначала добавь записи в дневник или суточный инсулин.',
+            'Add diary or daily insulin entries first.',
+            'Vispirms pievieno dienasgrāmatas vai diennakts insulīna ierakstus.'
+          )
         );
         return;
       }
@@ -571,17 +633,42 @@ export default function ReportScreen() {
         [...entries]
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
           .map(async (item, index) => {
-            const photos = getPhotoUris(item);
-            const photoBlocks = await Promise.all(
-              photos.slice(0, 4).map(async (uri, photoIndex) => {
-                const base64 = await imageToBase64(uri);
+            const dishes = getEntryDishes(item);
 
-                if (!base64) return '';
+            const dishBlocks = await Promise.all(
+              dishes.map(async (dish, dishIndex) => {
+                const dishPhoto = await imageToBase64(dish.photoUri);
 
                 return `
-                  <div class="diary-photo-wrap">
-                    <img class="diary-img" src="${base64}" />
-                    <div class="photo-label">${escapeHtml(tr('photo', 'Фото', 'Photo', 'Foto'))} ${photoIndex + 1}</div>
+                  <div class="dish-block">
+                    <h4>${dishIndex + 1}. ${escapeHtml(dish.mealName || tr('dish', 'Блюдо', 'Dish', 'Ēdiens'))}</h4>
+
+                    ${
+                      dishPhoto
+                        ? `<img class="dish-img" src="${dishPhoto}" />`
+                        : `<div class="no-photo small">${escapeHtml(tr('noPhoto', 'Фото нет', 'No photo', 'Nav foto'))}</div>`
+                    }
+
+                    <table>
+                      <tr>
+                        <td><b>${escapeHtml(tr('calories', 'Калории', 'Calories', 'Kalorijas'))}</b></td>
+                        <td>${escapeHtml(dish.calories || '-')}</td>
+                        <td><b>${escapeHtml(tr('breadUnitsShort', 'ХЕ', 'BU', 'XE'))}</b></td>
+                        <td>${escapeHtml(dish.breadUnits || '-')}</td>
+                      </tr>
+                      <tr>
+                        <td><b>${escapeHtml(tr('protein', 'Белки', 'Protein', 'Olbaltumvielas'))}</b></td>
+                        <td>${escapeHtml(dish.protein || '-')}</td>
+                        <td><b>${escapeHtml(tr('fat', 'Жиры', 'Fat', 'Tauki'))}</b></td>
+                        <td>${escapeHtml(dish.fat || '-')}</td>
+                      </tr>
+                      <tr>
+                        <td><b>${escapeHtml(tr('carbs', 'Углеводы', 'Carbs', 'Ogļhidrāti'))}</b></td>
+                        <td>${escapeHtml(dish.carbs || '-')}</td>
+                        <td><b>${escapeHtml(tr('comment', 'Комментарий', 'Comment', 'Komentārs'))}</b></td>
+                        <td>${escapeHtml(dish.mealComment || dish.aiComment || '-')}</td>
+                      </tr>
+                    </table>
                   </div>
                 `;
               })
@@ -589,15 +676,15 @@ export default function ReportScreen() {
 
             return `
               <div class="diary-entry">
-                <h3>${index + 1}. ${escapeHtml(item.mealName || tr('untitled', 'Без названия', 'Untitled', 'Bez nosaukuma'))}</h3>
+                <h3>${index + 1}. ${escapeHtml(tr('mealSummary', 'Общий итог приёма пищи', 'Meal summary', 'Ēdienreizes kopsavilkums'))}</h3>
                 <p class="muted">${escapeHtml(formatDate(item.createdAt))} · ${escapeHtml(item.mealType || '')}</p>
 
-                ${
-                  photoBlocks.filter(Boolean).length
-                    ? `<div class="photo-grid">${photoBlocks.join('')}</div>`
-                    : `<div class="no-photo">${escapeHtml(tr('noPhoto', 'Фото нет', 'No photo', 'Nav foto'))}</div>`
-                }
+                <div class="dish-list">
+                  <h4>${escapeHtml(tr('dishes', 'Блюда', 'Dishes', 'Ēdieni'))}</h4>
+                  ${dishBlocks.join('')}
+                </div>
 
+                <h4>${escapeHtml(tr('totalForMeal', 'Итого за приём пищи', 'Total for meal', 'Kopā ēdienreizē'))}</h4>
                 <table>
                   <tr>
                     <td><b>${escapeHtml(tr('glucoseBefore', 'Сахар до еды', 'Glucose before meal', 'Cukurs pirms ēšanas'))}</b></td>
@@ -640,6 +727,31 @@ export default function ReportScreen() {
             `;
           })
       );
+
+      const basalBlocks = basalEntries
+        .slice()
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .map((item, index) => {
+          return `
+            <div class="basal-entry">
+              <h3>${index + 1}. 💉 ${escapeHtml(item.insulinName || '-')}</h3>
+              <p class="muted">${escapeHtml(formatDate(item.createdAt))}</p>
+              <table>
+                <tr>
+                  <td><b>${escapeHtml(tr('time', 'Время', 'Time', 'Laiks'))}</b></td>
+                  <td>${escapeHtml(item.time || '-')}</td>
+                  <td><b>${escapeHtml(tr('units', 'Единицы', 'Units', 'Vienības'))}</b></td>
+                  <td>${escapeHtml(item.units || '-')}</td>
+                </tr>
+              </table>
+              ${
+                item.comment
+                  ? `<p><b>${escapeHtml(tr('comment', 'Комментарий', 'Comment', 'Komentārs'))}:</b> ${escapeHtml(item.comment)}</p>`
+                  : ''
+              }
+            </div>
+          `;
+        });
 
       const html = `
         <!DOCTYPE html>
@@ -690,7 +802,7 @@ export default function ReportScreen() {
                 font-size: 22px;
                 color: #2563eb;
               }
-              .meal, .diary-entry {
+              .meal, .diary-entry, .basal-entry {
                 page-break-inside: avoid;
                 border: 1px solid #e5e7eb;
                 border-radius: 14px;
@@ -733,6 +845,26 @@ export default function ReportScreen() {
                 font-size: 12px;
                 font-weight: bold;
                 margin-top: 4px;
+              }
+              .dish-block {
+                border: 1px solid #e5e7eb;
+                border-radius: 12px;
+                padding: 12px;
+                margin: 10px 0;
+                background: #f8fafc;
+                page-break-inside: avoid;
+              }
+              .dish-img {
+                width: 100%;
+                max-height: 260px;
+                object-fit: cover;
+                border-radius: 12px;
+                margin: 8px 0;
+              }
+              .small {
+                height: auto;
+                min-height: 42px;
+                padding: 14px;
               }
               table {
                 width: 100%;
@@ -778,6 +910,20 @@ export default function ReportScreen() {
                       'Пока нет проблемных блюд. Когда появятся записи с повышением сахара, они будут показаны здесь.',
                       'No problem meals yet. When entries with glucose rise appear, they will be shown here.',
                       'Pagaidām problemātisku ēdienu nav. Kad parādīsies ieraksti ar cukura paaugstināšanos, tie būs redzami šeit.'
+                    )
+                  )}</div>`
+            }
+
+            <h2>${escapeHtml(tr('dailyInsulin', 'Суточный инсулин', 'Daily insulin', 'Diennakts insulīns'))}</h2>
+            ${
+              basalBlocks.length
+                ? basalBlocks.join('')
+                : `<div class="box">${escapeHtml(
+                    tr(
+                      'noBasalEntries',
+                      'Записей суточного инсулина пока нет.',
+                      'No daily insulin entries yet.',
+                      'Diennakts insulīna ierakstu vēl nav.'
                     )
                   )}</div>`
             }
@@ -828,7 +974,7 @@ export default function ReportScreen() {
   };
 
   const shareTextReport = async () => {
-    if (!entries.length) {
+    if (!entries.length && !basalEntries.length) {
       Alert.alert(
         tr('noData', 'Нет данных', 'No data', 'Nav datu'),
         tr('reportAddEntriesFirst', 'Сначала добавь записи в дневник.', 'Add entries to the diary first.', 'Vispirms pievieno ierakstus dienasgrāmatā.')
@@ -848,6 +994,17 @@ export default function ReportScreen() {
       `${tr('lowValues', 'Низких значений', 'Low values', 'Zemas vērtības')}: ${lowCount}`,
       '',
       `${tr('aiConclusion', 'AI вывод', 'AI summary', 'MI secinājums')}: ${aiSummary}`,
+      '',
+      `${tr('dailyInsulin', 'Суточный инсулин', 'Daily insulin', 'Diennakts insulīns')}:`,
+      basalEntries.length
+        ? basalEntries
+            .slice(0, 10)
+            .map(
+              (item, index) =>
+                `${index + 1}. ${item.insulinName || '-'} — ${tr('units', 'Единицы', 'Units', 'Vienības')}: ${item.units || '-'}, ${tr('time', 'Время', 'Time', 'Laiks')}: ${item.time || '-'}`
+            )
+            .join('\n')
+        : tr('noBasalEntries', 'Записей суточного инсулина пока нет.', 'No daily insulin entries yet.', 'Diennakts insulīna ierakstu vēl nav.'),
     ];
 
     await Share.share({ message: lines.join('\n') });
@@ -928,12 +1085,60 @@ export default function ReportScreen() {
 
         <Card>
           <Text style={{ color: TEXT, fontSize: 22, fontWeight: '900', marginBottom: 8 }}>
-            🤖 {tr('conclusion', 'Вывод', 'Summary', 'Secinājums')}
+            💉 {tr('dailyInsulin', 'Суточный инсулин', 'Daily insulin', 'Diennakts insulīns')}
           </Text>
 
-          <Text style={{ color: '#374151', fontSize: 15, lineHeight: 22 }}>
-            {aiSummary}
-          </Text>
+          {basalEntries.length === 0 ? (
+            <Text style={{ color: MUTED, fontSize: 15, lineHeight: 22 }}>
+              {tr(
+                'noBasalEntries',
+                'Записей суточного инсулина пока нет.',
+                'No daily insulin entries yet.',
+                'Diennakts insulīna ierakstu vēl nav.'
+              )}
+            </Text>
+          ) : (
+            basalEntries.slice(0, 3).map((item) => (
+              <View
+                key={item.id}
+                style={{
+                  backgroundColor: '#f8fafc',
+                  borderRadius: 16,
+                  padding: 12,
+                  marginTop: 10,
+                }}
+              >
+                <Text style={{ color: TEXT, fontSize: 17, fontWeight: '900' }}>
+                  💉 {item.insulinName || '-'}
+                </Text>
+
+                <Text style={{ color: MUTED, fontSize: 14, marginTop: 4 }}>
+                  {formatDate(item.createdAt)}
+                </Text>
+
+                <Text style={{ color: '#374151', fontSize: 15, marginTop: 6 }}>
+                  {tr('time', 'Время', 'Time', 'Laiks')}: {item.time || '-'} · {tr('units', 'Единицы', 'Units', 'Vienības')}: {item.units || '-'}
+                </Text>
+
+                {!!item.comment && (
+                  <Text style={{ color: '#374151', fontSize: 14, marginTop: 6, lineHeight: 20 }}>
+                    {item.comment}
+                  </Text>
+                )}
+              </View>
+            ))
+          )}
+
+          {basalEntries.length > 3 ? (
+            <Text style={{ color: MUTED, fontSize: 14, marginTop: 10 }}>
+              {tr(
+                'moreBasalEntriesInPdf',
+                `Ещё записей в PDF: ${basalEntries.length - 3}`,
+                `More entries in PDF: ${basalEntries.length - 3}`,
+                `Vairāk ierakstu PDF: ${basalEntries.length - 3}`
+              )}
+            </Text>
+          ) : null}
         </Card>
 
         <PrimaryButton

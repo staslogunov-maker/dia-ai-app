@@ -38,6 +38,7 @@ type DiaryEntry = {
   photoUris?: string[];
 };
 
+
 type ChartMode = 'all' | 'before' | 'after';
 
 type MeasurePointBase = {
@@ -505,7 +506,17 @@ export default function GlucoseChartScreen() {
       const saved = await AsyncStorage.getItem('history');
       const parsed = saved ? JSON.parse(saved) : [];
 
-      setEntries(Array.isArray(parsed) ? parsed : []);
+      const filtered = Array.isArray(parsed)
+        ? parsed.filter(
+            (item) =>
+              item &&
+              !item.isBasalInsulin &&
+              item.mealType !== 'basal-insulin' &&
+              (item.glucoseBefore || item.glucoseAfter || item.mealName || item.photoUri)
+          )
+        : [];
+
+      setEntries(filtered);
     } catch (error) {
       console.log('Glucose chart loading error:', error);
       setEntries([]);
@@ -1055,11 +1066,6 @@ export default function GlucoseChartScreen() {
               color={BLUE}
             />
 
-            <StatCard
-              title={tr('highSugar', 'Высокий сахар', 'High glucose', 'Augsts cukurs')}
-              value={String(highCount)}
-              color={RED}
-            />
 
             {groupedMeasures.map((group) => (
               <View key={group.date} style={{ marginBottom: 16 }}>

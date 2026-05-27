@@ -142,6 +142,16 @@ export default function HomeScreen() {
 
         <SecondaryButton
           title={tr(
+            'dailyInsulin',
+            'СУТОЧНЫЙ ИНСУЛИН',
+            'DAILY INSULIN',
+            'DIENNAKTS INSULĪNS'
+          )}
+          onPress={() => router.push('/basal-insulin')}
+        />
+
+        <SecondaryButton
+          title={tr(
             'openDiary',
             'ОТКРЫТЬ ДНЕВНИК',
             'OPEN DIARY',

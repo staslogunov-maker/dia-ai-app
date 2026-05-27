@@ -30,6 +30,17 @@ type DiaryEntry = {
   photoUri?: string;
 };
 
+type BasalInsulinEntry = {
+  id: string;
+  createdAt: string;
+  insulinName: string;
+  units: string;
+  time: string;
+  comment: string;
+};
+
+const BASAL_INSULIN_KEY = 'basal-insulin-history';
+
 type InsightCardProps = {
   title: string;
   value: string;
@@ -77,6 +88,64 @@ function parseNumber(value?: string): number | null {
 
 function formatOne(value: number) {
   return value.toFixed(1).replace('.', ',');
+}
+
+function formatDate(dateString: string) {
+  try {
+    const locale = lang() === 'lv' ? 'lv-LV' : lang() === 'en' ? 'en-US' : 'ru-RU';
+
+    return new Date(dateString).toLocaleString(locale, {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return dateString;
+  }
+}
+
+function isSameDay(a: Date, b: Date) {
+  return (
+    a.getDate() === b.getDate() &&
+    a.getMonth() === b.getMonth() &&
+    a.getFullYear() === b.getFullYear()
+  );
+}
+
+function daysBetween(from: Date, to: Date) {
+  const start = new Date(from.getFullYear(), from.getMonth(), from.getDate()).getTime();
+  const end = new Date(to.getFullYear(), to.getMonth(), to.getDate()).getTime();
+
+  return Math.max(0, Math.floor((end - start) / (24 * 60 * 60 * 1000)));
+}
+
+function translateBasalAdvice(missingDays: number, total: number) {
+  if (total === 0) {
+    return tr(
+      'basalNoDataAdvice',
+      'Пока нет записей суточного инсулина. Если ты используешь длинный инсулин, лучше записывать его каждый день.',
+      'There are no daily insulin records yet. If you use long-acting insulin, it is better to record it every day.',
+      'Pagaidām nav diennakts insulīna ierakstu. Ja lieto ilgstošo insulīnu, labāk to pierakstīt katru dienu.'
+    );
+  }
+
+  if (missingDays >= 2) {
+    return tr(
+      'basalMissingAdvice',
+      `Есть возможные пропуски суточного инсулина: ${missingDays}. Проверь, не забывал ли ты длинный инсулин в эти дни.`,
+      `Possible missed daily insulin days: ${missingDays}. Check whether long-acting insulin was missed on those days.`,
+      `Iespējamas diennakts insulīna izlaišanas dienas: ${missingDays}. Pārbaudi, vai šajās dienās netika izlaists ilgstošais insulīns.`
+    );
+  }
+
+  return tr(
+    'basalGoodAdvice',
+    'Суточный инсулин записывается достаточно регулярно. Это поможет позже точнее анализировать утренний и ночной сахар.',
+    'Daily insulin is recorded regularly enough. This will later help analyze morning and night glucose more accurately.',
+    'Diennakts insulīns tiek pierakstīts pietiekami regulāri. Tas vēlāk palīdzēs precīzāk analizēt rīta un nakts cukuru.'
+  );
 }
 
 function translateMealType(value?: string) {
@@ -377,6 +446,7 @@ export default function AnalysisScreen() {
 
   const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState<DiaryEntry[]>([]);
+  const [basalEntries, setBasalEntries] = useState<BasalInsulinEntry[]>([]);
 
   const loadHistory = async () => {
     try {
@@ -385,10 +455,15 @@ export default function AnalysisScreen() {
       const raw = await AsyncStorage.getItem('history');
       const parsed: DiaryEntry[] = raw ? JSON.parse(raw) : [];
 
+      const basalRaw = await AsyncStorage.getItem(BASAL_INSULIN_KEY);
+      const basalParsed: BasalInsulinEntry[] = basalRaw ? JSON.parse(basalRaw) : [];
+
       setEntries(Array.isArray(parsed) ? parsed : []);
+      setBasalEntries(Array.isArray(basalParsed) ? basalParsed : []);
     } catch (error) {
       console.log('Analysis loading error:', error);
       setEntries([]);
+      setBasalEntries([]);
     } finally {
       setLoading(false);
     }
@@ -688,6 +763,54 @@ export default function AnalysisScreen() {
       riskData,
     };
   }, [entries]);
+
+
+  const basalStats = useMemo(() => {
+    const sorted = basalEntries
+      .slice()
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+    const last = sorted[0] || null;
+    const total = sorted.length;
+
+    const now = new Date();
+
+    const todayCount = sorted.filter((item) =>
+      isSameDay(new Date(item.createdAt), now)
+    ).length;
+
+    const last7Days = sorted.filter((item) => {
+      const date = new Date(item.createdAt);
+      return now.getTime() - date.getTime() <= 7 * 24 * 60 * 60 * 1000;
+    });
+
+    const uniqueDays = new Set(
+      last7Days.map((item) => {
+        const date = new Date(item.createdAt);
+        return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+      })
+    );
+
+    const missingLast7 = Math.max(0, 7 - uniqueDays.size);
+
+    const daysSinceLast =
+      last !== null ? daysBetween(new Date(last.createdAt), now) : null;
+
+    const advice = translateBasalAdvice(missingLast7, total);
+
+    return {
+      total,
+      last,
+      todayCount,
+      last7Count: last7Days.length,
+      missingLast7,
+      daysSinceLast,
+      advice,
+    };
+  }, [basalEntries]);
 
   const noDataText = tr('analysisNoData', 'Нет данных', 'No data', 'Nav datu');
   const notEnoughText = tr(
@@ -1105,6 +1228,101 @@ export default function AnalysisScreen() {
             subtitle={stats.riskData.subtitle}
             valueColor={stats.riskData.color}
           />
+        </SectionCard>
+
+        <SectionCard
+          title={tr(
+            'basalAnalysisTitle',
+            'Суточный инсулин',
+            'Daily insulin',
+            'Diennakts insulīns'
+          )}
+        >
+          <InsightCard
+            title={tr(
+              'basalTotalRecords',
+              'Записей суточного инсулина',
+              'Daily insulin records',
+              'Diennakts insulīna ieraksti'
+            )}
+            value={String(basalStats.total)}
+            subtitle={tr(
+              'basalTotalRecordsSubtitle',
+              'Считаются записи длинного / базального инсулина.',
+              'Long-acting / basal insulin records are counted here.',
+              'Šeit tiek skaitīti ilgstošā / bazālā insulīna ieraksti.'
+            )}
+          />
+
+          <InsightCard
+            title={tr(
+              'basalLastInjection',
+              'Последний суточный инсулин',
+              'Last daily insulin',
+              'Pēdējais diennakts insulīns'
+            )}
+            value={
+              basalStats.last
+                ? `${basalStats.last.insulinName} · ${basalStats.last.units}`
+                : noDataText
+            }
+            subtitle={
+              basalStats.last
+                ? `${tr('time', 'Время', 'Time', 'Laiks')}: ${
+                    basalStats.last.time
+                  } · ${formatDate(basalStats.last.createdAt)}`
+                : tr(
+                    'basalLastInjectionNoData',
+                    'Пока нет записей суточного инсулина.',
+                    'There are no daily insulin records yet.',
+                    'Pagaidām nav diennakts insulīna ierakstu.'
+                  )
+            }
+          />
+
+          <InsightCard
+            title={tr(
+              'basalTodayRecords',
+              'Сегодня записано',
+              'Recorded today',
+              'Šodien pierakstīts'
+            )}
+            value={String(basalStats.todayCount)}
+            subtitle={tr(
+              'basalTodayRecordsSubtitle',
+              'Сколько записей суточного инсулина сделано сегодня.',
+              'How many daily insulin records were made today.',
+              'Cik diennakts insulīna ierakstu veikti šodien.'
+            )}
+            valueColor={basalStats.todayCount > 0 ? GREEN : ORANGE}
+          />
+
+          <InsightCard
+            title={tr(
+              'basalMissing7Days',
+              'Возможные пропуски за 7 дней',
+              'Possible missed days in 7 days',
+              'Iespējami izlaidumi 7 dienās'
+            )}
+            value={String(basalStats.missingLast7)}
+            subtitle={tr(
+              'basalMissing7DaysSubtitle',
+              'Если длинный инсулин нужен каждый день, это поможет заметить пропуски.',
+              'If long-acting insulin is needed daily, this helps notice missed days.',
+              'Ja ilgstošais insulīns jālieto katru dienu, tas palīdz pamanīt izlaidumus.'
+            )}
+            valueColor={basalStats.missingLast7 >= 2 ? RED : GREEN}
+          />
+
+          <Text
+            style={{
+              fontSize: 16,
+              color: TEXT,
+              lineHeight: 24,
+            }}
+          >
+            {basalStats.advice}
+          </Text>
         </SectionCard>
 
         <SectionCard title={tr('analysisAdvice', 'Совет', 'Advice', 'Padoms')}>
