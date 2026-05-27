@@ -65,6 +65,7 @@ type AnalyzeResult = {
 };
 
 const API_URL = 'https://dia-server.onrender.com/analyze-food';
+const RECALCULATE_URL = 'https://dia-server.onrender.com/recalculate-food';
 const HISTORY_KEY = 'history';
 
 function lang() {
@@ -462,6 +463,7 @@ export default function FoodEntryScreen() {
 
   const [showCamera, setShowCamera] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
   const [savedOnce, setSavedOnce] = useState(false);
 
   const [mealType, setMealType] = useState(
@@ -641,6 +643,105 @@ export default function FoodEntryScreen() {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const recalculateFoodByDescription = async () => {
+    try {
+      if (recalculating) return;
+
+      const description = [
+        mealName,
+        mealComment,
+        aiComment,
+      ]
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .join('. ');
+
+      if (!description || description.length < 2) {
+        Alert.alert(
+          tr('noData', 'Нет данных', 'No data', 'Nav datu'),
+          tr(
+            'enterFoodDescriptionFirst',
+            'Сначала напиши правильное название или описание блюда.',
+            'First enter the correct food name or description.',
+            'Vispirms ievadi pareizu ēdiena nosaukumu vai aprakstu.'
+          )
+        );
+        return;
+      }
+
+      setRecalculating(true);
+
+      const response = await fetch(RECALCULATE_URL.replace(/\/+$/, ''), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          description,
+          language: String(i18n.locale || 'en').slice(0, 5),
+        }),
+      });
+
+      const text = await response.text();
+      console.log('RECALCULATE RESPONSE:', text);
+
+      let raw: any;
+
+      try {
+        raw = JSON.parse(text);
+      } catch {
+        throw new Error(
+          tr(
+            'serverNotJson',
+            'Сервер вернул не JSON: ',
+            'Server returned non-JSON: ',
+            'Serveris neatgrieza JSON: '
+          ) + text
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          raw?.error ||
+            tr(
+              'serverError',
+              'Сервер вернул ошибку',
+              'Server returned an error',
+              'Serveris atgrieza kļūdu'
+            )
+        );
+      }
+
+      const result = normalizeAnalyzeResult(raw);
+      fillFromAI(result);
+
+      Alert.alert(
+        tr('done', 'Готово', 'Done', 'Gatavs'),
+        tr(
+          'foodRecalculated',
+          'Блюдо пересчитано по твоему описанию.',
+          'Food recalculated from your description.',
+          'Ēdiens pārrēķināts pēc tava apraksta.'
+        )
+      );
+    } catch (error: any) {
+      console.log('Recalculate error:', error);
+
+      Alert.alert(
+        tr('error', 'Ошибка', 'Error', 'Kļūda'),
+        error?.message ||
+          tr(
+            'recalculateError',
+            'Не удалось пересчитать блюдо',
+            'Could not recalculate the food',
+            'Neizdevās pārrēķināt ēdienu'
+          )
+      );
+    } finally {
+      setRecalculating(false);
     }
   };
 
@@ -1074,6 +1175,31 @@ export default function FoodEntryScreen() {
                 setMealName(text);
                 setSavedOnce(false);
               }}
+              placeholder={tr(
+                'correctFoodNamePlaceholder',
+                'Например: суп-пюре с луком',
+                'For example: onion cream soup',
+                'Piemēram: sīpolu krēmzupa'
+              )}
+            />
+
+            <SecondaryButton
+              title={
+                recalculating
+                  ? tr(
+                      'recalculatingFood',
+                      'ПЕРЕСЧИТЫВАЕМ...',
+                      'RECALCULATING...',
+                      'PĀRRĒĶINA...'
+                    )
+                  : tr(
+                      'recalculateByDescription',
+                      'ПЕРЕСЧИТАТЬ ПО ОПИСАНИЮ',
+                      'RECALCULATE BY DESCRIPTION',
+                      'PĀRRĒĶINĀT PĒC APRAKSTA'
+                    )
+              }
+              onPress={recalculateFoodByDescription}
             />
 
             <InputField
