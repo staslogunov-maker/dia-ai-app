@@ -70,6 +70,7 @@ function extractJson(text) {
   } catch {}
 
   const match = text.match(/\{[\s\S]*\}/);
+
   if (!match) return null;
 
   try {
@@ -80,31 +81,45 @@ function extractJson(text) {
 }
 
 app.get('/', (req, res) => {
-  res.send('AI SERVER WORKS');
+  res.send('STAS MULTILANGUAGE AI V12 READY');
 });
 
-app.post(['/analyze-food', '/analyze-food/'], async (req, res) => {
-  try {
-    if (!apiKey) {
-      return res.status(500).json({
-        error: 'OPENAI_API_KEY missing on server',
-      });
-    }
+app.post(
+  [
+    '/analyze-food',
+    '/analyze-food/',
+    '/recalculate-food',
+    '/recalculate-food/',
+    '/recalculate-foods',
+    '/recalculate-foods/',
+  ],
+  async (req, res) => {
+    try {
+      if (!apiKey) {
+        return res.status(500).json({
+          error: 'OPENAI_API_KEY missing on server',
+        });
+      }
 
-    const { imageBase64 } = req.body || {};
+      const {
+        imageBase64,
+        language = 'ru',
+        description,
+        mealName,
+      } = req.body || {};
 
-    if (!imageBase64) {
-      return res.status(400).json({
-        error: 'Нет imageBase64',
-      });
-    }
+      let prompt = '';
 
-    const prompt = `
-Ты анализируешь фото еды для диабетического дневника.
+      // ---------- RECALCULATE MODE ----------
+      if (description || mealName) {
+        const foodText = description || mealName;
 
-Верни ТОЛЬКО JSON без пояснений и без markdown.
+        prompt = `
+Ты анализируешь описание еды для диабетического дневника.
 
-Формат ответа:
+Верни ТОЛЬКО JSON без markdown.
+
+Формат:
 {
   "displayName": "название блюда",
   "calories": 0,
@@ -112,66 +127,129 @@ app.post(['/analyze-food', '/analyze-food/'], async (req, res) => {
   "protein": 0,
   "fat": 0,
   "carbs": 0,
-  "comment": "краткий комментарий"
+  "comment": "короткий комментарий"
+}
+
+Описание еды:
+"${foodText}"
+
+Правила:
+- Считай максимально реалистично.
+- ХЕ = carbs / 12
+- Числа без единиц.
+- Комментарий короткий.
+`;
+      } else {
+        // ---------- IMAGE ANALYZE MODE ----------
+
+        if (!imageBase64) {
+          return res.status(400).json({
+            error: 'Нет imageBase64',
+          });
+        }
+
+        prompt = `
+Ты анализируешь фото еды для диабетического дневника.
+
+Верни ТОЛЬКО JSON без пояснений и markdown.
+
+Формат:
+{
+  "displayName": "название блюда",
+  "calories": 0,
+  "breadUnits": 0,
+  "protein": 0,
+  "fat": 0,
+  "carbs": 0,
+  "comment": "короткий комментарий"
 }
 
 Правила:
 - Всегда оценивай углеводы.
-- Если на фото есть картофель, рис, макароны, хлеб, сладости, фрукты, выпечка, крупы, соусы с сахаром — углеводы не должны быть 0.
-- Хлебные единицы считай умно: примерно 1 ХЕ = 12 г углеводов.
-- Если breadUnits не уверен, всё равно оцени по carbs.
-- Числа возвращай без единиц измерения.
-- Комментарий короткий, на русском языке.
+- ХЕ = carbs / 12
+- Числа без единиц измерения.
+- Комментарий короткий.
 `;
+      }
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      temperature: 0.2,
-      messages: [
-        {
-          role: 'system',
-          content:
-            'Ты эксперт по анализу еды и расчёту углеводов и хлебных единиц для диабетического дневника.',
-        },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt },
+      let response;
+
+      // ---------- IMAGE REQUEST ----------
+      if (imageBase64) {
+        response = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          temperature: 0.2,
+          messages: [
             {
-              type: 'image_url',
-              image_url: {
-                url: `data:image/jpeg;base64,${imageBase64}`,
-              },
+              role: 'system',
+              content:
+                'Ты эксперт по диабетическому питанию и анализу еды.',
+            },
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: prompt,
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:image/jpeg;base64,${imageBase64}`,
+                  },
+                },
+              ],
             },
           ],
-        },
-      ],
-    });
+        });
+      } else {
+        // ---------- TEXT REQUEST ----------
+        response = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          temperature: 0.2,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Ты эксперт по диабетическому питанию и анализу еды.',
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+        });
+      }
 
-    const content = response.choices?.[0]?.message?.content || '';
-    const parsed = extractJson(content);
+      const content =
+        response?.choices?.[0]?.message?.content || '';
 
-    if (!parsed) {
-      console.error('OPENAI RAW RESPONSE:', content);
+      console.log('OPENAI RAW:', content);
+
+      const parsed = extractJson(content);
+
+      if (!parsed) {
+        return res.status(500).json({
+          error: 'Не удалось разобрать ответ AI',
+          raw: content,
+        });
+      }
+
+      const result = normalizeResult(parsed);
+
+      console.log('FINAL RESULT:', result);
+
+      return res.json(result);
+    } catch (error) {
+      console.error('SERVER ERROR:', error);
+
       return res.status(500).json({
-        error: 'Не удалось разобрать ответ AI',
+        error: error?.message || 'Ошибка сервера',
       });
     }
-
-    const result = normalizeResult(parsed);
-
-    console.log('SERVER RESPONSE:', result);
-
-    return res.json(result);
-  } catch (error) {
-    console.error('SERVER ERROR:', error?.message || error);
-
-    return res.status(500).json({
-      error: error?.message || 'Ошибка сервера',
-    });
   }
-});
+);
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`AI SERVER STARTED ON ${PORT}`);
 });
