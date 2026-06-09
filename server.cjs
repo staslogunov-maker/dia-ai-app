@@ -151,6 +151,7 @@ app.post(
         language = 'ru',
         description,
         mealName,
+        previousNutrition,
       } = req.body || {};
 
       const responseLanguage = normalizeLanguage(language);
@@ -161,14 +162,32 @@ app.post(
         const foodText = description || mealName;
 
         prompt = `
-Ты анализируешь описание еды для диабетического дневника.
+Ты уточняешь уже сделанный анализ еды для дневника питания.
 
 Язык ответа: ${languageName(responseLanguage)}.
 displayName и comment должны быть на языке: ${languageName(responseLanguage)}.
 
-Верни ТОЛЬКО JSON без markdown.
+ВАЖНО:
+- Если передано фото, используй фото для размера порции.
+- Текст пользователя используй только как уточнение состава блюда.
+- Если переданы previousNutrition, используй их как базовую оценку.
+- Не меняй калории, углеводы и ХЕ больше чем на 20–30%, если пользователь только уточнил состав, но не изменил размер порции.
+- Если пользователь не указал количество соуса, считай обычную порцию: 1–2 столовые ложки.
+- Один и тот же текст и фото должны давать стабильный результат.
+- Для рыбы/мяса с овощным салатом без хлеба, риса, картошки или макарон ХЕ обычно не должны быть больше 1.5, даже если есть немного соуса терияки.
+- ХЕ = carbs / 12.
+- Числа без единиц.
+- Не пиши медицинские диагнозы.
+- Не добавляй текст вне JSON.
 
-Формат:
+Предыдущая оценка:
+${JSON.stringify(previousNutrition || {})}
+
+Уточнение пользователя:
+"${foodText}"
+
+Верни ТОЛЬКО JSON без markdown:
+
 {
   "displayName": "название блюда на языке пользователя",
   "calories": 0,
@@ -178,17 +197,6 @@ displayName и comment должны быть на языке: ${languageName(res
   "carbs": 0,
   "comment": "короткий комментарий на языке пользователя"
 }
-
-Описание еды:
-"${foodText}"
-
-Правила:
-- Считай максимально реалистично.
-- ХЕ = carbs / 12.
-- Числа без единиц.
-- Комментарий короткий.
-- Не пиши медицинские диагнозы.
-- Не добавляй текст вне JSON.
 `;
       } else {
         // ---------- IMAGE ANALYZE MODE ----------
@@ -234,7 +242,7 @@ displayName и comment должны быть на языке: ${languageName(res
       if (imageBase64) {
         response = await openai.chat.completions.create({
           model: 'gpt-4o-mini',
-          temperature: 0.2,
+          temperature: 0,
           messages: [
             {
               role: 'system',
@@ -261,7 +269,7 @@ displayName и comment должны быть на языке: ${languageName(res
         // ---------- TEXT REQUEST ----------
         response = await openai.chat.completions.create({
           model: 'gpt-4o-mini',
-          temperature: 0.2,
+          temperature: 0,
           messages: [
             {
               role: 'system',
