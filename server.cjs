@@ -58,14 +58,14 @@ function fallbackComment(language) {
   const code = normalizeLanguage(language);
 
   if (code === 'en') {
-    return 'The estimate is approximate. For accuracy, check the weight and ingredients.';
+    return 'The estimate is approximate. Check the portion size and ingredients. For a diary, it is useful to compare this meal with glucose after eating.';
   }
 
   if (code === 'lv') {
-    return 'Aprēķins ir aptuvens. Precizitātei pārbaudi svaru un sastāvu.';
+    return 'Aprēķins ir aptuvens. Pārbaudi porcijas lielumu un sastāvu. Dienasgrāmatai noderīgi salīdzināt šo ēdienu ar cukuru pēc ēšanas.';
   }
 
-  return 'Оценка примерная. Для точности проверь вес и состав блюда.';
+  return 'Оценка примерная. Проверь размер порции и состав блюда. Для дневника полезно сравнить эту еду с сахаром после еды.';
 }
 
 function smartBreadUnits(parsed) {
@@ -79,6 +79,61 @@ function smartBreadUnits(parsed) {
   return breadUnits;
 }
 
+function buildSmartComment(parsed, language = 'ru') {
+  const code = normalizeLanguage(language);
+  const carbs = toNumber(parsed.carbs, 0);
+  const breadUnits = smartBreadUnits(parsed);
+  const calories = toNumber(parsed.calories, 0);
+  const protein = toNumber(parsed.protein, 0);
+  const fat = toNumber(parsed.fat, 0);
+  const original = String(parsed.comment || '').trim();
+
+  if (original.length >= 70) return original;
+
+  const highCarbs = carbs >= 60 || breadUnits >= 5;
+  const mediumCarbs = carbs >= 30 || breadUnits >= 2.5;
+  const lowCarbs = carbs > 0 && carbs < 20;
+  const highFat = fat >= 25;
+  const highProtein = protein >= 25;
+
+  if (code === 'en') {
+    const parts = [];
+    parts.push(`Estimated load: about ${roundToTenth(breadUnits)} BU and ${roundToTenth(carbs)} g carbs.`);
+    if (highCarbs) parts.push('This is a noticeable carbohydrate load, so glucose may rise after eating.');
+    else if (mediumCarbs) parts.push('The carbohydrate load is moderate; checking glucose after the meal will show the real reaction.');
+    else if (lowCarbs) parts.push('The carbohydrate load looks low, so the glucose effect may be moderate.');
+    else parts.push('Carbs look minimal, but the estimate depends on the real portion and ingredients.');
+    if (highFat) parts.push('Fat may slow digestion, so glucose can rise later.');
+    if (highProtein) parts.push('There is also a good amount of protein, which can help with satiety.');
+    parts.push('This is not medical advice and does not prescribe insulin doses.');
+    return parts.join(' ');
+  }
+
+  if (code === 'lv') {
+    const parts = [];
+    parts.push(`Aptuvenā slodze: ap ${roundToTenth(breadUnits)} MV un ${roundToTenth(carbs)} g ogļhidrātu.`);
+    if (highCarbs) parts.push('Tā ir ievērojama ogļhidrātu slodze, tāpēc cukurs pēc ēšanas var paaugstināties.');
+    else if (mediumCarbs) parts.push('Ogļhidrātu slodze ir vidēja; cukura pārbaude pēc ēšanas parādīs reālo reakciju.');
+    else if (lowCarbs) parts.push('Ogļhidrātu slodze izskatās zema, tāpēc ietekme uz cukuru var būt mērena.');
+    else parts.push('Ogļhidrātu izskatās maz, bet aprēķins atkarīgs no porcijas un sastāva.');
+    if (highFat) parts.push('Tauki var palēnināt uzsūkšanos, tāpēc cukurs var paaugstināties vēlāk.');
+    if (highProtein) parts.push('Ēdienā ir arī labs olbaltumvielu daudzums, kas palīdz sāta sajūtai.');
+    parts.push('Tas nav medicīnisks norādījums un nenosaka insulīna devas.');
+    return parts.join(' ');
+  }
+
+  const parts = [];
+  parts.push(`Оценка: около ${roundToTenth(breadUnits)} ХЕ и ${roundToTenth(carbs)} г углеводов.`);
+  if (highCarbs) parts.push('Это заметная углеводная нагрузка, сахар после еды может подняться.');
+  else if (mediumCarbs) parts.push('Углеводная нагрузка средняя; замер сахара после еды покажет реальную реакцию.');
+  else if (lowCarbs) parts.push('Углеводов немного, влияние на сахар может быть умеренным.');
+  else parts.push('Углеводов выглядит мало, но точность зависит от порции и состава.');
+  if (highFat) parts.push('Жиры могут замедлить усвоение, поэтому сахар иногда поднимается позже.');
+  if (highProtein) parts.push('Белка достаточно много, это может лучше насыщать.');
+  parts.push('Это не медицинское назначение и не расчёт дозы инсулина.');
+  return parts.join(' ');
+}
+
 function normalizeResult(parsed, language = 'ru') {
   const calories = toNumber(parsed.calories, 0);
   const protein = toNumber(parsed.protein, 0);
@@ -86,7 +141,7 @@ function normalizeResult(parsed, language = 'ru') {
   const carbs = toNumber(parsed.carbs, 0);
   const breadUnits = smartBreadUnits(parsed);
 
-  return {
+  const normalized = {
     displayName: String(parsed.displayName || fallbackDishName(language)),
     calories: roundToTenth(calories),
     breadUnits: roundToTenth(breadUnits),
@@ -95,6 +150,10 @@ function normalizeResult(parsed, language = 'ru') {
     carbs: roundToTenth(carbs),
     comment: String(parsed.comment || fallbackComment(language)),
   };
+
+  normalized.comment = buildSmartComment(normalized, language);
+
+  return normalized;
 }
 
 function extractJson(text) {
@@ -122,11 +181,21 @@ function buildSystemPrompt(language) {
 Отвечай строго на языке пользователя: ${languageName(language)}.
 Поля displayName и comment ОБЯЗАТЕЛЬНО должны быть на языке пользователя.
 Верни только JSON без markdown и без дополнительного текста.
+
+Комментарий должен быть полезным для дневника диабета:
+- 2-4 предложения.
+- Учитывай углеводы, ХЕ, калории, жиры и белки.
+- Если углеводов много, предупреди о возможном росте сахара после еды.
+- Если жиров много, укажи, что сахар может подняться позже.
+- Если углеводов мало, отметь, что влияние на сахар может быть умеренным.
+- Не назначай дозы инсулина.
+- Не ставь диагнозы.
+- Не заменяй врача.
 `;
 }
 
 app.get('/', (req, res) => {
-  res.send('STAS MULTILANGUAGE AI V13 READY');
+  res.send('STAS MULTILANGUAGE AI V14 SMART COMMENTS READY');
 });
 
 app.post(
@@ -151,7 +220,6 @@ app.post(
         language = 'ru',
         description,
         mealName,
-        previousNutrition,
       } = req.body || {};
 
       const responseLanguage = normalizeLanguage(language);
@@ -162,32 +230,14 @@ app.post(
         const foodText = description || mealName;
 
         prompt = `
-Ты уточняешь уже сделанный анализ еды для дневника питания.
+Ты анализируешь описание еды для диабетического дневника.
 
 Язык ответа: ${languageName(responseLanguage)}.
 displayName и comment должны быть на языке: ${languageName(responseLanguage)}.
 
-ВАЖНО:
-- Если передано фото, используй фото для размера порции.
-- Текст пользователя используй только как уточнение состава блюда.
-- Если переданы previousNutrition, используй их как базовую оценку.
-- Не меняй калории, углеводы и ХЕ больше чем на 20–30%, если пользователь только уточнил состав, но не изменил размер порции.
-- Если пользователь не указал количество соуса, считай обычную порцию: 1–2 столовые ложки.
-- Один и тот же текст и фото должны давать стабильный результат.
-- Для рыбы/мяса с овощным салатом без хлеба, риса, картошки или макарон ХЕ обычно не должны быть больше 1.5, даже если есть немного соуса терияки.
-- ХЕ = carbs / 12.
-- Числа без единиц.
-- Не пиши медицинские диагнозы.
-- Не добавляй текст вне JSON.
+Верни ТОЛЬКО JSON без markdown.
 
-Предыдущая оценка:
-${JSON.stringify(previousNutrition || {})}
-
-Уточнение пользователя:
-"${foodText}"
-
-Верни ТОЛЬКО JSON без markdown:
-
+Формат:
 {
   "displayName": "название блюда на языке пользователя",
   "calories": 0,
@@ -195,8 +245,24 @@ ${JSON.stringify(previousNutrition || {})}
   "protein": 0,
   "fat": 0,
   "carbs": 0,
-  "comment": "короткий комментарий на языке пользователя"
+  "comment": "полезный комментарий для диабетического дневника на языке пользователя"
 }
+
+Описание еды:
+"${foodText}"
+
+Правила:
+- Считай максимально реалистично.
+- ХЕ = carbs / 12.
+- Числа без единиц.
+- Комментарий 2-4 предложения.
+- В комментарии учитывай ХЕ, углеводы, жиры, белки и калории.
+- Если углеводов много, предупреди о возможном росте сахара после еды.
+- Если жирное блюдо, укажи, что сахар может подняться позже.
+- Если углеводов мало, отметь умеренную нагрузку.
+- Не назначай дозы инсулина.
+- Не пиши медицинские диагнозы.
+- Не добавляй текст вне JSON.
 `;
       } else {
         // ---------- IMAGE ANALYZE MODE ----------
@@ -223,14 +289,19 @@ displayName и comment должны быть на языке: ${languageName(res
   "protein": 0,
   "fat": 0,
   "carbs": 0,
-  "comment": "короткий комментарий на языке пользователя"
+  "comment": "полезный комментарий для диабетического дневника на языке пользователя"
 }
 
 Правила:
 - Всегда оценивай углеводы.
 - ХЕ = carbs / 12.
 - Числа без единиц измерения.
-- Комментарий короткий.
+- Комментарий 2-4 предложения.
+- В комментарии учитывай ХЕ, углеводы, жиры, белки и калории.
+- Если углеводов много, предупреди о возможном росте сахара после еды.
+- Если блюдо жирное, укажи, что сахар может подниматься позже.
+- Если углеводов мало, отметь, что влияние на сахар может быть умеренным.
+- Не назначай дозы инсулина.
 - Не пиши медицинские диагнозы.
 - Не добавляй текст вне JSON.
 `;
@@ -242,7 +313,7 @@ displayName и comment должны быть на языке: ${languageName(res
       if (imageBase64) {
         response = await openai.chat.completions.create({
           model: 'gpt-4o-mini',
-          temperature: 0,
+          temperature: 0.25,
           messages: [
             {
               role: 'system',
@@ -269,7 +340,7 @@ displayName и comment должны быть на языке: ${languageName(res
         // ---------- TEXT REQUEST ----------
         response = await openai.chat.completions.create({
           model: 'gpt-4o-mini',
-          temperature: 0,
+          temperature: 0.25,
           messages: [
             {
               role: 'system',
