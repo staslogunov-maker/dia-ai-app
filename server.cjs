@@ -26,13 +26,15 @@ function roundToTenth(value) {
 }
 
 function toNumber(value, fallback = 0) {
-  const num = Number(value);
+  if (value === null || value === undefined || value === '') return fallback;
+  const match = String(value).replace(',', '.').match(/-?\d+(\.\d+)?/);
+  if (!match) return fallback;
+  const num = Number(match[0]);
   return Number.isFinite(num) ? num : fallback;
 }
 
 function normalizeLanguage(language) {
   const code = String(language || 'ru').toLowerCase();
-
   if (code.startsWith('en')) return 'en';
   if (code.startsWith('lv')) return 'lv';
   return 'ru';
@@ -40,7 +42,6 @@ function normalizeLanguage(language) {
 
 function languageName(language) {
   const code = normalizeLanguage(language);
-
   if (code === 'en') return 'English';
   if (code === 'lv') return 'Latviešu';
   return 'Русский';
@@ -48,7 +49,6 @@ function languageName(language) {
 
 function fallbackDishName(language) {
   const code = normalizeLanguage(language);
-
   if (code === 'en') return 'Unknown dish';
   if (code === 'lv') return 'Nezināms ēdiens';
   return 'Неизвестное блюдо';
@@ -56,92 +56,85 @@ function fallbackDishName(language) {
 
 function fallbackComment(language) {
   const code = normalizeLanguage(language);
-
-  if (code === 'en') {
-    return 'The estimate is approximate. Check the portion size and ingredients. For a diary, it is useful to compare this meal with glucose after eating.';
-  }
-
-  if (code === 'lv') {
-    return 'Aprēķins ir aptuvens. Pārbaudi porcijas lielumu un sastāvu. Dienasgrāmatai noderīgi salīdzināt šo ēdienu ar cukuru pēc ēšanas.';
-  }
-
-  return 'Оценка примерная. Проверь размер порции и состав блюда. Для дневника полезно сравнить эту еду с сахаром после еды.';
+  if (code === 'en') return 'The estimate is approximate. Check the weight and ingredients for better accuracy.';
+  if (code === 'lv') return 'Aprēķins ir aptuvens. Precizitātei pārbaudi svaru un sastāvu.';
+  return 'Оценка примерная. Для точности проверь вес и состав блюда.';
 }
 
 function smartBreadUnits(parsed) {
   const carbs = toNumber(parsed.carbs, 0);
   let breadUnits = toNumber(parsed.breadUnits, 0);
 
-  if (carbs > 0) {
-    breadUnits = roundToTenth(carbs / 12);
-  }
+  if (carbs > 0) breadUnits = roundToTenth(carbs / 12);
+  if (carbs <= 0 && breadUnits > 0) return roundToTenth(breadUnits);
 
   return breadUnits;
 }
 
-function buildSmartComment(parsed, language = 'ru') {
+function buildSmartComment(result, language = 'ru') {
   const code = normalizeLanguage(language);
-  const carbs = toNumber(parsed.carbs, 0);
-  const breadUnits = smartBreadUnits(parsed);
-  const calories = toNumber(parsed.calories, 0);
-  const protein = toNumber(parsed.protein, 0);
-  const fat = toNumber(parsed.fat, 0);
-  const original = String(parsed.comment || '').trim();
-
-  if (original.length >= 70) return original;
-
-  const highCarbs = carbs >= 60 || breadUnits >= 5;
-  const mediumCarbs = carbs >= 30 || breadUnits >= 2.5;
-  const lowCarbs = carbs > 0 && carbs < 20;
-  const highFat = fat >= 25;
-  const highProtein = protein >= 25;
+  const carbs = toNumber(result.carbs, 0);
+  const breadUnits = toNumber(result.breadUnits, 0);
+  const fat = toNumber(result.fat, 0);
+  const protein = toNumber(result.protein, 0);
+  const calories = toNumber(result.calories, 0);
 
   if (code === 'en') {
-    const parts = [];
-    parts.push(`Estimated load: about ${roundToTenth(breadUnits)} BU and ${roundToTenth(carbs)} g carbs.`);
-    if (highCarbs) parts.push('This is a noticeable carbohydrate load, so glucose may rise after eating.');
-    else if (mediumCarbs) parts.push('The carbohydrate load is moderate; checking glucose after the meal will show the real reaction.');
-    else if (lowCarbs) parts.push('The carbohydrate load looks low, so the glucose effect may be moderate.');
-    else parts.push('Carbs look minimal, but the estimate depends on the real portion and ingredients.');
-    if (highFat) parts.push('Fat may slow digestion, so glucose can rise later.');
-    if (highProtein) parts.push('There is also a good amount of protein, which can help with satiety.');
-    parts.push('This is not medical advice and does not prescribe insulin doses.');
+    const parts = [`Estimate: about ${breadUnits} BU / ${carbs} g carbs and ${calories} kcal.`];
+    if (carbs >= 60) parts.push('This is a high carbohydrate load and may noticeably raise glucose after the meal.');
+    else if (carbs >= 30) parts.push('This is a moderate carbohydrate load, so after-meal glucose control is useful.');
+    else if (carbs > 0) parts.push('The carbohydrate load is relatively low, so the glucose effect may be moderate.');
+    if (fat >= 20) parts.push(`Fat is also high (${fat} g), which may slow digestion and cause a later glucose rise.`);
+    if (protein >= 20) parts.push(`Protein is noticeable (${protein} g), which can improve satiety.`);
+    parts.push('This is not a medical prescription; use it as diary guidance.');
     return parts.join(' ');
   }
 
   if (code === 'lv') {
-    const parts = [];
-    parts.push(`Aptuvenā slodze: ap ${roundToTenth(breadUnits)} MV un ${roundToTenth(carbs)} g ogļhidrātu.`);
-    if (highCarbs) parts.push('Tā ir ievērojama ogļhidrātu slodze, tāpēc cukurs pēc ēšanas var paaugstināties.');
-    else if (mediumCarbs) parts.push('Ogļhidrātu slodze ir vidēja; cukura pārbaude pēc ēšanas parādīs reālo reakciju.');
-    else if (lowCarbs) parts.push('Ogļhidrātu slodze izskatās zema, tāpēc ietekme uz cukuru var būt mērena.');
-    else parts.push('Ogļhidrātu izskatās maz, bet aprēķins atkarīgs no porcijas un sastāva.');
-    if (highFat) parts.push('Tauki var palēnināt uzsūkšanos, tāpēc cukurs var paaugstināties vēlāk.');
-    if (highProtein) parts.push('Ēdienā ir arī labs olbaltumvielu daudzums, kas palīdz sāta sajūtai.');
-    parts.push('Tas nav medicīnisks norādījums un nenosaka insulīna devas.');
+    const parts = [`Aptuveni: ${breadUnits} MV / ${carbs} g ogļhidrātu un ${calories} kcal.`];
+    if (carbs >= 60) parts.push('Tā ir liela ogļhidrātu slodze un pēc ēšanas cukurs var ievērojami paaugstināties.');
+    else if (carbs >= 30) parts.push('Tā ir vidēja ogļhidrātu slodze, tāpēc pēc ēšanas ir vērts pārbaudīt cukuru.');
+    else if (carbs > 0) parts.push('Ogļhidrātu slodze ir salīdzinoši zema, tāpēc ietekme uz cukuru var būt mērena.');
+    if (fat >= 20) parts.push(`Tauku ir daudz (${fat} g), tas var palēnināt uzsūkšanos un dot vēlāku cukura kāpumu.`);
+    if (protein >= 20) parts.push(`Olbaltumvielu ir pietiekami (${protein} g), tas var dot sāta sajūtu.`);
+    parts.push('Tas nav medicīnisks norādījums, bet dienasgrāmatas komentārs.');
     return parts.join(' ');
   }
 
-  const parts = [];
-  parts.push(`Оценка: около ${roundToTenth(breadUnits)} ХЕ и ${roundToTenth(carbs)} г углеводов.`);
-  if (highCarbs) parts.push('Это заметная углеводная нагрузка, сахар после еды может подняться.');
-  else if (mediumCarbs) parts.push('Углеводная нагрузка средняя; замер сахара после еды покажет реальную реакцию.');
-  else if (lowCarbs) parts.push('Углеводов немного, влияние на сахар может быть умеренным.');
-  else parts.push('Углеводов выглядит мало, но точность зависит от порции и состава.');
-  if (highFat) parts.push('Жиры могут замедлить усвоение, поэтому сахар иногда поднимается позже.');
-  if (highProtein) parts.push('Белка достаточно много, это может лучше насыщать.');
-  parts.push('Это не медицинское назначение и не расчёт дозы инсулина.');
+  const parts = [`Оценка: около ${String(breadUnits).replace('.', ',')} ХЕ / ${String(carbs).replace('.', ',')} г углеводов и ${String(calories).replace('.', ',')} ккал.`];
+  if (carbs >= 60) parts.push('Это высокая углеводная нагрузка, сахар после еды может заметно подняться.');
+  else if (carbs >= 30) parts.push('Это средняя углеводная нагрузка, лучше проверить сахар после еды.');
+  else if (carbs > 0) parts.push('Углеводов немного, влияние на сахар может быть умеренным.');
+  if (fat >= 20) parts.push(`Жиров много (${String(fat).replace('.', ',')} г), из-за этого сахар может подниматься медленнее, но дольше.`);
+  if (protein >= 20) parts.push(`Белка достаточно (${String(protein).replace('.', ',')} г), блюдо может лучше насыщать.`);
+  parts.push('Это не назначение лечения, а подсказка для дневника.');
   return parts.join(' ');
 }
 
 function normalizeResult(parsed, language = 'ru') {
-  const calories = toNumber(parsed.calories, 0);
-  const protein = toNumber(parsed.protein, 0);
-  const fat = toNumber(parsed.fat, 0);
-  const carbs = toNumber(parsed.carbs, 0);
-  const breadUnits = smartBreadUnits(parsed);
+  let calories = toNumber(parsed.calories, 0);
+  let protein = toNumber(parsed.protein, 0);
+  let fat = toNumber(parsed.fat, 0);
+  let carbs = toNumber(parsed.carbs, 0);
+  let breadUnits = smartBreadUnits(parsed);
 
-  const normalized = {
+  if (carbs <= 0 && breadUnits > 0) carbs = breadUnits * 12;
+  if (carbs > 0) breadUnits = carbs / 12;
+
+  protein = Math.max(0, Math.min(protein, 250));
+  fat = Math.max(0, Math.min(fat, 250));
+  carbs = Math.max(0, Math.min(carbs, 350));
+  breadUnits = Math.max(0, Math.min(breadUnits, 30));
+  calories = Math.max(0, Math.min(calories, 3500));
+
+  const macroCalories = protein * 4 + carbs * 4 + fat * 9;
+  const bigCalorieMismatch = macroCalories > 0 && Math.abs(calories - macroCalories) > Math.max(120, macroCalories * 0.25);
+
+  if (calories <= 0 || bigCalorieMismatch) {
+    calories = macroCalories;
+  }
+
+  const result = {
     displayName: String(parsed.displayName || fallbackDishName(language)),
     calories: roundToTenth(calories),
     breadUnits: roundToTenth(breadUnits),
@@ -151,27 +144,19 @@ function normalizeResult(parsed, language = 'ru') {
     comment: String(parsed.comment || fallbackComment(language)),
   };
 
-  normalized.comment = buildSmartComment(normalized, language);
+  // Финальный комментарий строим на сервере из реальных цифр,
+  // чтобы ИИ не писал общие фразы без ХЕ и углеводов.
+  result.comment = buildSmartComment(result, language);
 
-  return normalized;
+  return result;
 }
 
 function extractJson(text) {
   if (!text) return null;
-
-  try {
-    return JSON.parse(text);
-  } catch {}
-
+  try { return JSON.parse(text); } catch {}
   const match = text.match(/\{[\s\S]*\}/);
-
   if (!match) return null;
-
-  try {
-    return JSON.parse(match[0]);
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(match[0]); } catch { return null; }
 }
 
 function buildSystemPrompt(language) {
@@ -181,56 +166,12 @@ function buildSystemPrompt(language) {
 Отвечай строго на языке пользователя: ${languageName(language)}.
 Поля displayName и comment ОБЯЗАТЕЛЬНО должны быть на языке пользователя.
 Верни только JSON без markdown и без дополнительного текста.
-
-Комментарий должен быть полезным для дневника диабета:
-- 2-4 предложения.
-- Учитывай углеводы, ХЕ, калории, жиры и белки.
-- Если углеводов много, предупреди о возможном росте сахара после еды.
-- Если жиров много, укажи, что сахар может подняться позже.
-- Если углеводов мало, отметь, что влияние на сахар может быть умеренным.
-- Не назначай дозы инсулина.
-- Не ставь диагнозы.
-- Не заменяй врача.
 `;
 }
 
-app.get('/', (req, res) => {
-  res.send('STAS MULTILANGUAGE AI V14 SMART COMMENTS READY');
-});
-
-app.post(
-  [
-    '/analyze-food',
-    '/analyze-food/',
-    '/recalculate-food',
-    '/recalculate-food/',
-    '/recalculate-foods',
-    '/recalculate-foods/',
-  ],
-  async (req, res) => {
-    try {
-      if (!apiKey) {
-        return res.status(500).json({
-          error: 'OPENAI_API_KEY missing on server',
-        });
-      }
-
-      const {
-        imageBase64,
-        language = 'ru',
-        description,
-        mealName,
-      } = req.body || {};
-
-      const responseLanguage = normalizeLanguage(language);
-      let prompt = '';
-
-      // ---------- RECALCULATE MODE ----------
-      if (description || mealName) {
-        const foodText = description || mealName;
-
-        prompt = `
-Ты анализируешь описание еды для диабетического дневника.
+function buildFoodPrompt(responseLanguage, foodText = '') {
+  return `
+Ты анализируешь еду для дневника питания и диабета.
 
 Язык ответа: ${languageName(responseLanguage)}.
 displayName и comment должны быть на языке: ${languageName(responseLanguage)}.
@@ -248,139 +189,98 @@ displayName и comment должны быть на языке: ${languageName(res
   "comment": "полезный комментарий для диабетического дневника на языке пользователя"
 }
 
-Описание еды:
-"${foodText}"
+${foodText ? `Описание еды:\n"${foodText}"` : ''}
 
 Правила:
-- Считай максимально реалистично.
-- ХЕ = carbs / 12.
-- Числа без единиц.
-- Комментарий 2-4 предложения.
-- В комментарии учитывай ХЕ, углеводы, жиры, белки и калории.
-- Если углеводов много, предупреди о возможном росте сахара после еды.
-- Если жирное блюдо, укажи, что сахар может подняться позже.
-- Если углеводов мало, отметь умеренную нагрузку.
-- Не назначай дозы инсулина.
-- Не пиши медицинские диагнозы.
-- Не добавляй текст вне JSON.
-`;
-      } else {
-        // ---------- IMAGE ANALYZE MODE ----------
-
-        if (!imageBase64) {
-          return res.status(400).json({
-            error: 'Нет imageBase64',
-          });
-        }
-
-        prompt = `
-Ты анализируешь фото еды для диабетического дневника.
-
-Язык ответа: ${languageName(responseLanguage)}.
-displayName и comment должны быть на языке: ${languageName(responseLanguage)}.
-
-Верни ТОЛЬКО JSON без пояснений и markdown.
-
-Формат:
-{
-  "displayName": "название блюда на языке пользователя",
-  "calories": 0,
-  "breadUnits": 0,
-  "protein": 0,
-  "fat": 0,
-  "carbs": 0,
-  "comment": "полезный комментарий для диабетического дневника на языке пользователя"
-}
-
-Правила:
+- Считай максимально реалистично по видимой порции или описанию.
 - Всегда оценивай углеводы.
 - ХЕ = carbs / 12.
 - Числа без единиц измерения.
-- Комментарий 2-4 предложения.
-- В комментарии учитывай ХЕ, углеводы, жиры, белки и калории.
-- Если углеводов много, предупреди о возможном росте сахара после еды.
-- Если блюдо жирное, укажи, что сахар может подниматься позже.
-- Если углеводов мало, отметь, что влияние на сахар может быть умеренным.
-- Не назначай дозы инсулина.
+- Не занижай сладости, хлеб, лаваш, рис, картофель, макароны, пиццу, молоко, соки и десерты.
+- Если на фото целая упаковка, оценивай видимую/вероятную порцию, а не всю коробку, если пользователь явно не указал всю коробку.
+- Комментарий должен быть полезным для диабетического дневника.
+- Учитывай углеводы, ХЕ, калории, белки и жиры.
+- Если углеводов много, предупреди о возможном росте сахара.
+- Если углеводов мало, отметь это.
+- Если жиров много, укажи, что сахар может подняться позже.
+- Пиши 2-4 предложения.
 - Не пиши медицинские диагнозы.
+- Не назначай дозы инсулина.
 - Не добавляй текст вне JSON.
 `;
-      }
+}
 
-      let response;
+app.get('/', (req, res) => {
+  res.send('STAS MULTILANGUAGE AI V15 SMART COMMENTS READY');
+});
 
-      // ---------- IMAGE REQUEST ----------
-      if (imageBase64) {
-        response = await openai.chat.completions.create({
-          model: 'gpt-4o-mini',
-          temperature: 0.25,
-          messages: [
-            {
-              role: 'system',
-              content: buildSystemPrompt(responseLanguage),
-            },
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: prompt,
-                },
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: `data:image/jpeg;base64,${imageBase64}`,
-                  },
-                },
-              ],
-            },
-          ],
-        });
-      } else {
-        // ---------- TEXT REQUEST ----------
-        response = await openai.chat.completions.create({
-          model: 'gpt-4o-mini',
-          temperature: 0.25,
-          messages: [
-            {
-              role: 'system',
-              content: buildSystemPrompt(responseLanguage),
-            },
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-        });
-      }
+app.post([
+  '/analyze-food',
+  '/analyze-food/',
+  '/recalculate-food',
+  '/recalculate-food/',
+  '/recalculate-foods',
+  '/recalculate-foods/',
+], async (req, res) => {
+  try {
+    if (!apiKey) {
+      return res.status(500).json({ error: 'OPENAI_API_KEY missing on server' });
+    }
 
-      const content = response?.choices?.[0]?.message?.content || '';
+    const { imageBase64, language = 'ru', description, mealName } = req.body || {};
+    const responseLanguage = normalizeLanguage(language);
+    const foodText = description || mealName || '';
 
-      console.log('OPENAI RAW:', content);
+    if (!imageBase64 && !foodText) {
+      return res.status(400).json({ error: 'Нет imageBase64 или описания еды' });
+    }
 
-      const parsed = extractJson(content);
+    const prompt = buildFoodPrompt(responseLanguage, foodText);
+    let response;
 
-      if (!parsed) {
-        return res.status(500).json({
-          error: 'Не удалось разобрать ответ AI',
-          raw: content,
-        });
-      }
-
-      const result = normalizeResult(parsed, responseLanguage);
-
-      console.log('FINAL RESULT:', result);
-
-      return res.json(result);
-    } catch (error) {
-      console.error('SERVER ERROR:', error);
-
-      return res.status(500).json({
-        error: error?.message || 'Ошибка сервера',
+    if (imageBase64) {
+      response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        temperature: 0.2,
+        messages: [
+          { role: 'system', content: buildSystemPrompt(responseLanguage) },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt },
+              { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } },
+            ],
+          },
+        ],
+      });
+    } else {
+      response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        temperature: 0.2,
+        messages: [
+          { role: 'system', content: buildSystemPrompt(responseLanguage) },
+          { role: 'user', content: prompt },
+        ],
       });
     }
+
+    const content = response?.choices?.[0]?.message?.content || '';
+    console.log('OPENAI RAW:', content);
+
+    const parsed = extractJson(content);
+    if (!parsed) {
+      return res.status(500).json({ error: 'Не удалось разобрать ответ AI', raw: content });
+    }
+
+    const result = normalizeResult(parsed, responseLanguage);
+    console.log('FINAL RESULT:', result);
+
+    return res.json(result);
+  } catch (error) {
+    console.error('SERVER ERROR:', error);
+    return res.status(500).json({ error: error?.message || 'Ошибка сервера' });
   }
-);
+});
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`AI SERVER STARTED ON ${PORT}`);
